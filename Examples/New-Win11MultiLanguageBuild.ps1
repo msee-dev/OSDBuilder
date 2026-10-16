@@ -68,6 +68,7 @@ param (
     #Regional format, system locale and keyboard of the image (Dism /Set-UserLocale, /Set-SysLocale, /Set-InputLocale)
     #For regions without an own display language, for example 'de-AT' with -DefaultLanguage 'de-DE'
     #The individual settings take precedence over Set-AllIntl, the display language stays -DefaultLanguage
+    #Language Features of the region on the Languages and Optional Features ISO are added (TextToSpeech-de-at)
     [string]$RegionalFormat,
 
     #Language Features on Demand of each language, Fonts are added automatically when the language requires them
@@ -273,6 +274,22 @@ foreach ($Language in ($Languages | ForEach-Object {$_.ToLower()} | Sort-Object 
     if ($FontScript.ContainsKey($Language)) {
         $Cab = "Microsoft-Windows-LanguageFeatures-Fonts-$($FontScript[$Language])-Package~31bf3856ad364e35~amd64~~.cab"
         if (Test-Path (Join-Path $LofPath $Cab)) {$LanguageFeature += "$LofRelative\$Cab"}
+    }
+}
+#Regional formats without a Language Pack have own Language Features (TextToSpeech-de-at, TextToSpeech-de-ch),
+#they depend on the Basic Language Feature of the display language (Basic-de-de), see the LP to FOD mapping table
+#https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/features-on-demand-language-fod
+if ($RegionalFormat -and ($RegionalFormat -notin $Languages)) {
+    $Region = $RegionalFormat.ToLower()
+    $RegionFeature = @(foreach ($Type in $LanguageFeatures) {
+        $Cab = "Microsoft-Windows-LanguageFeatures-$Type-$Region-Package~31bf3856ad364e35~amd64~~.cab"
+        if (Test-Path (Join-Path $LofPath $Cab)) {"$LofRelative\$Cab"}
+    })
+    $DisplayLanguage = @($Languages | Where-Object {$_.Split('-')[0] -eq $Region.Split('-')[0]})
+    if ($RegionFeature -and $DisplayLanguage) {$LanguageFeature += $RegionFeature}
+    elseif ($RegionFeature) {
+        $ParentLp = @(Get-ChildItem -Path $LofPath -Filter "Microsoft-Windows-Client-Language-Pack_x64_$($Region.Split('-')[0])-*.cab" -ErrorAction SilentlyContinue | ForEach-Object {$_.Name -replace '^.*_x64_' -replace '\.cab$'})
+        Write-Warning "The Language Features of $RegionalFormat require a display language like $($ParentLp -join ' or ') in -Languages, they are not added"
     }
 }
 if ($Missing) {

@@ -38,6 +38,11 @@ jobs:
       - name: Install Pester and PSScriptAnalyzer
         run: ./Tests/Invoke-OSDBuilderTests.ps1 -InstallDependencies
 
+      # Module.Tests.ps1 checks the commands OSDBuilder calls against the newest OSD module of the PowerShell Gallery
+      - name: Install the OSD module
+        if: matrix.os == 'ubuntu-latest'
+        run: Install-Module -Name OSD -Scope CurrentUser -Force
+
       - name: PSScriptAnalyzer, Pester and code coverage
         run: ./Tests/Invoke-OSDBuilderTests.ps1 -CI
 

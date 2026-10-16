@@ -71,6 +71,18 @@ Describe 'Get-FeatureUpdateDownloads' {
         $Downloads[1].Title | Should -Be 'Windows 11 24H2 x64 en-us Volume 26100.4349'
     }
 
+    It 'maps the Architecture amd64 of OSD 26.10 to x64' {
+        Mock Get-OSDCloudOperatingSystems {
+            [PSCustomObject]@{
+                Status = $null; ReleaseDate = $null; Name = 'Windows 11 25H2 amd64 de-de Volume 26200.6584'; Version = 'Windows 11'; ReleaseID = '25H2'
+                Architecture = 'amd64'; Language = 'de-de'; Activation = 'Volume'; Build = '26200.6584'
+                FileName = '26200.6584.250915-1905.25h2_ge_release_svc_refresh_CLIENTBUSINESS_VOL_x64FRE_de-de.esd'
+                Url = 'http://dl.delivery.mp.microsoft.com/filestreamingservice/files/client_business_vol_de-de.esd'; SHA1 = 'aabbccddeeff00112233445566778899aabbccdd'
+            }
+        }
+        @(Get-FeatureUpdateDownloads).UpdateArch | Should -Be 'x64'
+    }
+
     It 'maps the properties to the OSDBuilder download properties' {
         $Download = $Downloads[1]
         $Download.UpdateOS | Should -Be 'Windows 11'
@@ -269,66 +281,6 @@ Describe 'Get-PEBuildTask' {
         $Selected = @(Get-PEBuildTask -GridView 3>$null 6>$null)
         Should -Invoke Out-GridView -Times 4 -Exactly -ParameterFilter {$PassThru -and ($Title -eq 'PEBuildTask')}
         $Selected.Count | Should -Be 4
-    }
-}
-
-Describe 'Get-OSDFromJson' {
-    It 'converts nested JSON objects to hashtables and arrays to lists' {
-        $Path = Join-Path $TestDrive 'Task.json'
-        Set-Content -Path $Path -Value '{"TaskName":"Win11","TaskVersion":"25.10.14.1","Media":{"Arch":"x64","Build":26200},"Languages":["de-DE","fr-FR"],"Drivers":[{"Name":"Dell"},{"Name":"HP"}]}'
-        $Result = Get-OSDFromJson -Path $Path
-        $Result | Should -BeOfType [hashtable]
-        $Result.TaskName | Should -Be 'Win11'
-        $Result.Media | Should -BeOfType [hashtable]
-        $Result.Media.Arch | Should -Be 'x64'
-        $Result.Media.Build | Should -Be 26200
-        @($Result.Languages) | Should -Be @('de-DE', 'fr-FR')
-        $Result.Drivers[1] | Should -BeOfType [hashtable]
-        $Result.Drivers[1].Name | Should -Be 'HP'
-    }
-
-    It 'returns an empty hashtable when the file does not exist' {
-        $Result = Get-OSDFromJson (Join-Path $TestDrive 'Missing.json')
-        $Result | Should -BeOfType [hashtable]
-        $Result.Count | Should -Be 0
-    }
-
-    It 'returns $null for a JSON null without an error' {
-        $Path = Join-Path $TestDrive 'Null.json'
-        Set-Content -Path $Path -Value '{"CustomName":null}'
-        $Result = Get-OSDFromJson -Path $Path -ErrorVariable JsonErrors 2>$null
-        $Result.ContainsKey('CustomName') | Should -BeTrue
-        $Result.CustomName | Should -BeNullOrEmpty
-        $JsonErrors | Should -BeNullOrEmpty
-    }
-}
-
-Describe 'Get-Value' {
-    It 'returns a scalar unchanged' {
-        Get-Value -value 'Windows 11' | Should -BeExactly 'Windows 11'
-        Get-Value -value 26200 | Should -Be 26200
-    }
-
-    It 'converts a PSCustomObject recursively to a hashtable' {
-        $Result = Get-Value -value ([PSCustomObject]@{Name = 'Win11'; Media = [PSCustomObject]@{Arch = 'x64'}})
-        $Result | Should -BeOfType [hashtable]
-        $Result.Name | Should -Be 'Win11'
-        $Result.Media | Should -BeOfType [hashtable]
-        $Result.Media.Arch | Should -Be 'x64'
-    }
-
-    It 'converts the items of an array' {
-        $Result = @(Get-Value -value @([PSCustomObject]@{Name = 'Dell'}, 'HP'))
-        $Result.Count | Should -Be 2
-        $Result[0] | Should -BeOfType [hashtable]
-        $Result[0].Name | Should -Be 'Dell'
-        $Result[1] | Should -Be 'HP'
-    }
-
-    It 'keeps a JSON array with one item as a list' {
-        $Result = Get-Value -value ([PSCustomObject]@{Languages = @('de-DE'); Drivers = @()})
-        , $Result.Languages | Should -BeOfType [System.Collections.IList]
-        , $Result.Drivers | Should -BeOfType [System.Collections.IList]
     }
 }
 

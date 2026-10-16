@@ -538,22 +538,6 @@ function New-OSDCloudOSMedia {
             #=======================================================================
             #Save-WindowsImageContentPE
             #=======================================================================
-            Write-Verbose '19.3.17 UBR Validation'
-            #=======================================================================
-            if ($MyInvocation.MyCommand.Name -eq 'Update-OSMedia') {
-                if ($UBRPre -eq $UBR) {
-                    Write-Host '========================================================================================' -ForegroundColor DarkGray
-                    Write-Warning 'The Update Build Revision did not change after Windows Updates'
-                    Write-Warning 'There may have been an issue applying the Latest Cumulative Update if this was not expected'
-                }
-            }
-            if (!($UBR)) {
-                Write-Host '========================================================================================' -ForegroundColor DarkGray
-                $UBR = $((Get-Date).ToString('yyMMddhhmm'))
-                Write-Warning 'Could not determine a UBR'
-            }
-
-            #=======================================================================
             #   Remove Temporary Files
             #=======================================================================
             if (Test-Path "$WimTemp") {Remove-Item -Path "$WimTemp" -Force -Recurse | Out-Null}

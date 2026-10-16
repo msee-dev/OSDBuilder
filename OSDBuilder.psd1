@@ -34,6 +34,9 @@ PowerShell Module OSD 24.10.8.1 or newer
         'New-OSDBuilderVHD',
         'New-PEBuild',
         'New-PEBuildTask',
+        'Rename-OSMedia',
+        'Repair-OSBuildTask',
+        'Repair-PEBuildTask',
         'Save-OSDBuilderDownload',
         'Show-OSDBuilderInfo',
         'Update-OSMedia'

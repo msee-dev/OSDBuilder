@@ -255,3 +255,12 @@ Features on Demand are added with `Add-WindowsCapability` as recommended by Micr
   `Add-WindowsPackage` is only used when the capability cannot be added
 * Tasks with Features on Demand `.cab` files (`AddFeatureOnDemand`) still work, recreate the Task to switch to `AddWindowsCapability`
 * The LCU is reapplied once after Language and Feature on Demand content is added
+
+### Renaming OSMedia and repairing old Tasks
+
+* `Rename-OSMedia` lists the OSMedia whose directory name differs from the name `Import-OSMedia` and `Update-OSMedia` use
+  (`<ImageName> <Arch> <DisplayVersion> <UBR> <Languages>`, for example `Windows 11 Enterprise x64 25H2 26200.6584`)
+  and renames the OSMedia selected in Out-GridView, an existing OSMedia with the new name is not overwritten
+* `Repair-OSBuildTask` and `Repair-PEBuildTask` convert Tasks of OSDBuilder 19.1.3.0 and older to the current format,
+  `New-OSBuild` and `New-PEBuild` need Tasks of version 19.1.4.0 or newer. The OSMedia of every old Task is selected in Out-GridView,
+  the original Task is saved in `Tasks\Repair`

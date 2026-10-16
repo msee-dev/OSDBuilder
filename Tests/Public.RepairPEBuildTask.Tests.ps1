@@ -146,11 +146,13 @@ Describe 'Repair-PEBuildTask' {
 
     It 'writes the Languages of the OSMedia and keeps a TaskName with umlauts' {
         $Task = Get-Content -Path $TaskPath -Raw | ConvertFrom-Json
-        $Task.TaskName = 'Win10 PE Österreich'
+        #[char]0x00D6 is an O with umlaut, the test file stays ASCII for Windows PowerShell 5.1
+        $TaskName = "Win10 PE $([char]0x00D6)sterreich"
+        $Task.TaskName = $TaskName
         $Task | ConvertTo-Json | Set-Content -Path $TaskPath -Encoding UTF8
         Repair-PEBuildTask 6>$null 3>$null
         $Repaired = Get-Content -Path $TaskPath -Raw | ConvertFrom-Json
-        $Repaired.TaskName | Should -BeExactly 'Win10 PE Österreich'
+        $Repaired.TaskName | Should -BeExactly $TaskName
         @($Repaired.Languages) | Should -Be @('en-US', 'de-DE')
     }
 

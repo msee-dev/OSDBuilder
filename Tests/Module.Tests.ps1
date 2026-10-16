@@ -83,3 +83,28 @@ Describe 'Private functions' {
         $Duplicates | Should -BeNullOrEmpty
     }
 }
+
+Describe 'OSD module' {
+    BeforeDiscovery {
+        $OSD = Get-Module -Name OSD -ListAvailable | Sort-Object -Property Version -Descending | Select-Object -First 1
+        #Commands of the OSD module that OSDBuilder calls
+        $OSDCommands = @(
+            'Add-WindowsPackageSSU', 'Block-NoCurl', 'Block-PowerShellVersionLt5', 'Block-StandardUser', 'Block-WindowsVersionNe10', 'Block-WinPE',
+            'Enable-PEWindowsImagePSGallery', 'Get-AdkPaths', 'Get-IntelWirelessDriverPack', 'Get-OSDCloudOperatingSystems', 'Get-RegCurrentVersion',
+            'Get-SessionsXml', 'Get-WindowsUpdateManifests', 'Save-WebFile', 'Set-WindowsImageExecutionPolicy', 'Test-WebConnection', 'Test-WindowsPackageCAB'
+        )
+    }
+
+    BeforeAll {
+        $OSD = Get-Module -Name OSD -ListAvailable | Sort-Object -Property Version -Descending | Select-Object -First 1
+        if ($OSD) {
+            $OSDManifest = Import-PowerShellDataFile -Path $OSD.Path
+            $OSDExports = @($OSDManifest.FunctionsToExport) + @($OSDManifest.AliasesToExport)
+        }
+    }
+
+    #runs when the OSD module is installed, the tests themselves do not need it
+    It 'the newest installed OSD module exports <_>' -ForEach $OSDCommands -Skip:(-not $OSD) {
+        $OSDExports | Should -Contain $_
+    }
+}

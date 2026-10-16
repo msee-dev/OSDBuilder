@@ -16,7 +16,7 @@ BeforeAll {
         param (
             [string]$Root, [string]$Name, [string]$ImageName, $Architecture = 9, $Build = 26200, $UBR = 6899,
             [string[]]$Languages = @('en-US'), [string]$InstallationType = 'Client', $MajorVersion = 10,
-            [string]$EditionId = 'Enterprise', [string]$ReleaseId, [string]$OSMGuid = [guid]::NewGuid().Guid
+            [string]$EditionId = 'Enterprise', [string]$ReleaseId, [string]$DisplayVersion, [string]$OSMGuid = [guid]::NewGuid().Guid
         )
         $Path = Join-Path $Root $Name
         foreach ($Folder in 'xml', 'logs', 'json') {New-Item -Path (Join-Path (Join-Path $Path 'info') $Folder) -ItemType Directory -Force | Out-Null}
@@ -27,8 +27,8 @@ BeforeAll {
         }
         if ($OSMGuid) {$Image | Add-Member -NotePropertyName OSMGuid -NotePropertyValue $OSMGuid}
         $Image | Export-Clixml -Path (Join-Path (Join-Path (Join-Path $Path 'info') 'xml') 'Get-WindowsImage.xml')
-        if ($ReleaseId) {
-            [PSCustomObject]@{ReleaseId = $ReleaseId} | Export-Clixml -Path (Join-Path (Join-Path (Join-Path $Path 'info') 'xml') 'CurrentVersion.xml')
+        if ($ReleaseId -or $DisplayVersion) {
+            [PSCustomObject]@{ReleaseId = $ReleaseId; DisplayVersion = $DisplayVersion} | Export-Clixml -Path (Join-Path (Join-Path (Join-Path $Path 'info') 'xml') 'CurrentVersion.xml')
         }
         Get-Item -Path $Path
     }
@@ -46,17 +46,19 @@ Describe 'Rename-OSMedia' {
     It 'renames <ImageName> build <Build> to <Expected>' -TestCases @(
         @{ImageName = 'Windows 11 Enterprise'; Architecture = 9; Build = 26200; UBR = 6899; Languages = @('en-US'); InstallationType = 'Client'; MajorVersion = 10; ReleaseId = '25H2'; Expected = 'Windows 11 Enterprise x64 25H2 6899'}
         @{ImageName = 'Windows 10 Enterprise'; Architecture = 0; Build = 17763; UBR = 6893; Languages = @('en-US', 'de-DE'); InstallationType = 'Client'; MajorVersion = 10; ReleaseId = $null; Expected = 'Windows 10 Enterprise x86 1809 6893 en-US de-DE'}
-        @{ImageName = 'Windows 7 Professional'; Architecture = 9; Build = 7601; UBR = 24544; Languages = @('de-DE'); InstallationType = 'Client'; MajorVersion = 6; ReleaseId = $null; Expected = 'Windows 7 Professional x64 SP1 24544 de-DE'}
-        @{ImageName = 'Windows 7 Starter'; Architecture = 0; Build = 7600; UBR = 16385; Languages = @('en-US'); InstallationType = 'Client'; MajorVersion = 6; ReleaseId = $null; Expected = 'Windows 7 Starter x86 7600 16385'}
-        @{ImageName = 'Windows Server 2012 R2 SERVERSTANDARD'; Architecture = 6; Build = 9600; UBR = 21620; Languages = @('en-US'); InstallationType = 'Server'; MajorVersion = 6; ReleaseId = $null; Expected = 'Windows Server 2012 R2 SERVERSTANDARD ia64 9600 21620'}
+        @{ImageName = 'Windows 7 Professional'; Architecture = 9; Build = 7601; UBR = 24544; Languages = @('de-DE'); InstallationType = 'Client'; MajorVersion = 6; ReleaseId = $null; Expected = 'Windows 7 Professional x64 24544 de-DE'}
+        @{ImageName = 'Windows 7 Starter'; Architecture = 0; Build = 7600; UBR = 16385; Languages = @('en-US'); InstallationType = 'Client'; MajorVersion = 6; ReleaseId = $null; Expected = 'Windows 7 Starter x86 16385'}
+        @{ImageName = 'Windows Server 2012 R2 SERVERSTANDARD'; Architecture = 6; Build = 9600; UBR = 21620; Languages = @('en-US'); InstallationType = 'Server'; MajorVersion = 6; ReleaseId = $null; Expected = 'Windows Server 2012 R2 SERVERSTANDARD ia64 21620'}
         @{ImageName = 'Windows 10 Enterprise 2015 LTSB'; Architecture = 9; Build = 10240; UBR = 20796; Languages = @('en-US'); InstallationType = 'Client'; MajorVersion = 10; ReleaseId = $null; Expected = 'Windows 10 Enterprise 2015 LTSB x64 1507 20796'}
         @{ImageName = 'Windows Server 2016 SERVERDATACENTER (Desktop Experience)'; Architecture = 9; Build = 14393; UBR = 7428; Languages = @('en-US'); InstallationType = 'Server'; MajorVersion = 10; ReleaseId = $null; Expected = 'Windows Server 2016 SERVERDATACENTER Desktop Experience x64 1607 7428'}
         @{ImageName = 'Windows 10 Pro'; Architecture = 12; Build = 15063; UBR = 2679; Languages = @('en-US'); InstallationType = 'Client'; MajorVersion = 10; ReleaseId = $null; Expected = 'Windows 10 Pro x64 ARM 1703 2679'}
         @{ImageName = 'Windows 10 Education'; Architecture = 9; Build = 16299; UBR = 2166; Languages = @('en-US'); InstallationType = 'Client'; MajorVersion = 10; ReleaseId = $null; Expected = 'Windows 10 Education x64 1709 2166'}
         @{ImageName = 'Windows Server 2019 SERVERSTANDARD'; Architecture = 9; Build = 17134; UBR = 2208; Languages = @('en-US'); InstallationType = 'Server'; MajorVersion = 10; ReleaseId = $null; Expected = 'Windows Server 2019 SERVERSTANDARD x64 1803 2208'}
         @{ImageName = 'Windows Server 2022 SERVERSTANDARD'; Architecture = 9; Build = 20348; UBR = 4171; Languages = @('en-US'); InstallationType = 'Server'; MajorVersion = 10; ReleaseId = '2009'; Expected = 'Windows Server 2022 SERVERSTANDARD x64 2009 4171'}
+        @{ImageName = 'Windows Server 2022 SERVERSTANDARD'; Architecture = 9; Build = 20348; UBR = 4171; Languages = @('en-US'); InstallationType = 'Server'; MajorVersion = 10; ReleaseId = '2009'; DisplayVersion = '21H2'; Expected = 'Windows Server 2022 SERVERSTANDARD x64 21H2 4171'}
+        @{ImageName = 'Windows 11 Enterprise'; Architecture = 9; Build = 26200; UBR = 6899; Languages = @('de-DE'); InstallationType = 'Client'; MajorVersion = 10; ReleaseId = '2009'; DisplayVersion = '25H2'; Expected = 'Windows 11 Enterprise x64 25H2 6899 de-DE'}
     ) {
-        $Media = New-OSMediaFixture -Root $SetOSDBuilderPathOSMedia -Name 'Imported OSMedia' -ImageName $ImageName -Architecture $Architecture -Build $Build -UBR $UBR -Languages $Languages -InstallationType $InstallationType -MajorVersion $MajorVersion -ReleaseId $ReleaseId
+        $Media = New-OSMediaFixture -Root $SetOSDBuilderPathOSMedia -Name 'Imported OSMedia' -ImageName $ImageName -Architecture $Architecture -Build $Build -UBR $UBR -Languages $Languages -InstallationType $InstallationType -MajorVersion $MajorVersion -ReleaseId $ReleaseId -DisplayVersion $DisplayVersion
         Rename-OSMedia 3>$null
         Test-Path -Path (Join-Path $SetOSDBuilderPathOSMedia $Expected) -PathType Container | Should -BeTrue
         Test-Path -Path $Media.FullName | Should -BeFalse
@@ -89,6 +91,15 @@ Describe 'Rename-OSMedia' {
         Rename-OSMedia 3>$null
         $script:GridItems.Count | Should -Be 0
         Test-Path -Path (Join-Path $SetOSDBuilderPathOSMedia 'Not an OSMedia') | Should -BeTrue
+    }
+
+    It 'warns and keeps the OSMedia when an OSMedia with the new name exists' {
+        $Media = New-OSMediaFixture -Root $SetOSDBuilderPathOSMedia -Name 'Old' -ImageName 'Windows 11 Pro' -ReleaseId '25H2'
+        New-OSMediaFixture -Root $SetOSDBuilderPathOSMedia -Name 'Windows 11 Pro x64 25H2 6899' -ImageName 'Windows 11 Pro' -ReleaseId '25H2' | Out-Null
+        $Warnings = (Rename-OSMedia -ErrorVariable RenameErrors 3>&1) -join "`n"
+        $Warnings | Should -BeLike "*Windows 11 Pro x64 25H2 6899 already exists*"
+        $RenameErrors | Should -BeNullOrEmpty
+        Test-Path -Path $Media.FullName | Should -BeTrue
     }
 
     It 'renames nothing when no OSMedia is selected' {

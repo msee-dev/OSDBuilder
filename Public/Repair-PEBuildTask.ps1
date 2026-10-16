@@ -1,4 +1,15 @@
 function Repair-PEBuildTask {
+    <#
+    .SYNOPSIS
+    Converts PEBuild Tasks of OSDBuilder 19.1.3.0 and older to the current Task format
+
+    .DESCRIPTION
+    New-PEBuild needs Tasks of version 19.1.4.0 or newer. Repair-PEBuildTask selects the OSMedia of every old Task in Out-GridView,
+    saves the original Task in Tasks\Repair and writes the Task in the current format.
+
+    .EXAMPLE
+    Repair-PEBuildTask
+    #>
     [CmdletBinding()]
     param ()
     Begin {
@@ -14,8 +25,12 @@ function Repair-PEBuildTask {
         #=================================================
         Write-Verbose '19.1.6 Gather All PEBuildTask'
         #=================================================
-        $PEBuildTask = @()
-        $PEBuildTask = Get-PEBuildTask | Where-Object {$null -eq $_.OSMGuid}
+        #Tasks up to 19.1.3.0 use the old format (MediaName, AddWindowsDriver ...) that New-PEBuild cannot read
+        $PEBuildTask = @(Get-ChildItem -Path "$SetOSDBuilderPathTasks" -Filter 'PEBuild*.json' -File -ErrorAction SilentlyContinue | Where-Object {
+            $TaskVersion = (Get-Content -Path $_.FullName -Raw | ConvertFrom-Json).TaskVersion -as [System.Version]
+            $TaskVersion -and ($TaskVersion -le [System.Version]'19.1.3.0')
+        })
+        if ($PEBuildTask.Count -eq 0) {Write-Warning "No PEBuild Task needs a Repair"}
     }
     
     Process {
@@ -30,12 +45,7 @@ function Repair-PEBuildTask {
             Write-Verbose 'Read Task'
             #=================================================
             $Task = @()
-            $Task = Get-Content "$($Item.FullName)" | ConvertFrom-Json
-
-            if ([System.Version]$Task.TaskVersion -gt [System.Version]"19.1.3.0") {
-                Write-Warning "Error: PEBuild Task does not need a Repair . . . Exiting!"
-                Return
-            }
+            $Task = Get-Content "$($Item.FullName)" -Raw | ConvertFrom-Json
     
             Write-Host "Select the OSMedia that will be used with this PEBuild Task"
             Write-Host "Previous OSMedia: $($Task.MediaName)"
@@ -53,8 +63,8 @@ function Repair-PEBuildTask {
             $OSMedia = $OSMedia | Out-GridView -OutputMode Single -Title "$($Task.TaskName): Select the OSMedia used with this PEBuild Task"
     
             if ($null -eq $OSMedia) {
-                Write-Warning "Error: OSMedia was not selected . . . Exiting!"
-                Return
+                Write-Warning "OSMedia was not selected, skipping $($Item.FullName)"
+                Continue
             }
 
             Write-Host "Selected $($OSMedia.Name)"
@@ -75,6 +85,7 @@ function Repair-PEBuildTask {
                 "Arch" = [string]$OSMedia.Arch;
                 "ReleaseId" = [string]$($OSMedia.ReleaseId);
                 "UBR" = [string]$OSMedia.UBR;
+                "Languages" = [string[]]$OSMedia.Languages;
                 "EditionId" = [string]$OSMedia.EditionId;
                 "InstallationType" = [string]$OSMedia.InstallationType;
                 "MajorVersion" = [string]$OSMedia.MajorVersion;
@@ -110,7 +121,7 @@ function Repair-PEBuildTask {
             #=================================================
             Write-Verbose '19.1.7 New-PEBuildTask Complete'
             #=================================================
-            $NewTask | ConvertTo-Json | Out-File "$($Item.FullName)" -Encoding ascii
+            $NewTask | ConvertTo-Json | Out-File "$($Item.FullName)"
             Write-Host "Update Complete: $($Task.TaskName)"
             Write-Host '========================================================================================' -ForegroundColor DarkGray
         }

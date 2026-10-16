@@ -1,4 +1,15 @@
 function Repair-OSBuildTask {
+    <#
+    .SYNOPSIS
+    Converts OSBuild Tasks of OSDBuilder 19.1.3.0 and older to the current Task format
+
+    .DESCRIPTION
+    New-OSBuild needs Tasks of version 19.1.4.0 or newer. Repair-OSBuildTask selects the OSMedia of every old Task in Out-GridView,
+    saves the original Task in Tasks\Repair and writes the Task in the current format.
+
+    .EXAMPLE
+    Repair-OSBuildTask
+    #>
     [CmdletBinding()]
     param ()
     Begin {
@@ -14,8 +25,12 @@ function Repair-OSBuildTask {
         #=================================================
         Write-Verbose '19.1.6 Gather All OSBuildTask'
         #=================================================
-        $OSBuildTask = @()
-        $OSBuildTask = Get-OSBuildTask | Where-Object {$null -eq $_.OSMGuid}
+        #Tasks up to 19.1.3.0 use the old format (MediaName, AddWindowsDriver ...) that New-OSBuild cannot read
+        $OSBuildTask = @(Get-ChildItem -Path "$SetOSDBuilderPathTasks" -Filter 'OSBuild*.json' -File -ErrorAction SilentlyContinue | Where-Object {
+            $TaskVersion = (Get-Content -Path $_.FullName -Raw | ConvertFrom-Json).TaskVersion -as [System.Version]
+            $TaskVersion -and ($TaskVersion -le [System.Version]'19.1.3.0')
+        })
+        if ($OSBuildTask.Count -eq 0) {Write-Warning "No OSBuild Task needs a Repair"}
     }
     
     Process {
@@ -30,12 +45,7 @@ function Repair-OSBuildTask {
             Write-Verbose 'Read Task'
             #=================================================
             $Task = @()
-            $Task = Get-Content "$($Item.FullName)" | ConvertFrom-Json
-
-            if ([System.Version]$Task.TaskVersion -gt [System.Version]"19.1.3.0") {
-                Write-Warning "Error: OSBuild Task does not need a Repair . . . Exiting!"
-                Return
-            }
+            $Task = Get-Content "$($Item.FullName)" -Raw | ConvertFrom-Json
     
             Write-Host "Select the OSMedia that will be used with this OSBuild Task"
             Write-Host "Previous OSMedia: $($Task.MediaName)"
@@ -53,8 +63,8 @@ function Repair-OSBuildTask {
             $OSMedia = $OSMedia | Out-GridView -OutputMode Single -Title "$($Task.TaskName): Select the OSMedia used with this OSBuild Task"
     
             if ($null -eq $OSMedia) {
-                Write-Warning "Error: OSMedia was not selected . . . Exiting!"
-                Return
+                Write-Warning "OSMedia was not selected, skipping $($Item.FullName)"
+                Continue
             }
 
             Write-Host "Selected $($OSMedia.Name)"
@@ -76,6 +86,7 @@ function Repair-OSBuildTask {
                 "Arch" = [string]$OSMedia.Arch;
                 "ReleaseId" = [string]$($OSMedia.ReleaseId);
                 "UBR" = [string]$OSMedia.UBR;
+                "Languages" = [string[]]$OSMedia.Languages;
                 "EditionId" = [string]$OSMedia.EditionId;
                 "InstallationType" = [string]$OSMedia.InstallationType;
                 "MajorVersion" = [string]$OSMedia.MajorVersion;
@@ -140,7 +151,7 @@ function Repair-OSBuildTask {
             #=================================================
             Write-Verbose '19.1.1 New-OSBuildTask Complete'
             #=================================================
-            $NewTask | ConvertTo-Json | Out-File "$($Item.FullName)" -Encoding ascii
+            $NewTask | ConvertTo-Json | Out-File "$($Item.FullName)"
             Write-Host "Update Complete: $($Task.TaskName)"
             Write-Host '========================================================================================' -ForegroundColor DarkGray
         }

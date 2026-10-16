@@ -16,7 +16,7 @@ BeforeAll {
         [PSCustomObject]@{
             Name = "Windows 10 Enterprise $Arch $ReleaseId"; Arch = $Arch; ReleaseId = $ReleaseId; OSMGuid = [guid]::NewGuid().Guid
             OSMFamily = "Client Enterprise $Arch 17763 en-US"; ImageName = 'Windows 10 Enterprise'; UBR = '6893'; EditionId = 'Enterprise'
-            InstallationType = 'Client'; MajorVersion = '10'; Build = '17763'
+            InstallationType = 'Client'; MajorVersion = '10'; Build = '17763'; Languages = @('en-US', 'de-DE')
             CreatedTime = [datetime]'2026-10-14 10:00:00'; ModifiedTime = [datetime]'2026-10-14 11:00:00'
         }
     }
@@ -48,7 +48,10 @@ Describe 'Repair-PEBuildTask' {
         $script:Select = 'Windows 10 Enterprise x64 1809'
         $script:GridItems = [System.Collections.Generic.List[string]]::new()
         Mock Get-OSDBuilder {}
-        Mock Get-PEBuildTask {[PSCustomObject]@{FullName = $TaskPath; OSMGuid = $null}}
+        $SetOSDBuilderPathTasks = $TaskDirectory
+        #a Task of the current format does not need a Repair
+        $NewTaskPath = Join-Path $TaskDirectory 'PEBuild Current.json'
+        Set-Content -Path $NewTaskPath -Value ([ordered]@{TaskType = 'PEBuild'; TaskName = 'Current'; TaskVersion = '26.10.14.1'; OSMGuid = [guid]::NewGuid().Guid} | ConvertTo-Json)
         Mock Get-OSMedia {$script:Media}
         Mock Out-GridView {if ($InputObject) {$script:GridItems.Add($InputObject.Name); if ($InputObject.Name -eq $script:Select) {$InputObject}}}
     }
@@ -106,14 +109,49 @@ Describe 'Repair-PEBuildTask' {
         (Get-Content -Path $TaskPath -Raw | ConvertFrom-Json).TaskType | Should -Be 'PEBuild'
     }
 
-    It 'does not change a task that is newer than 19.1.3' {
+    It 'does not change a Task newer than 19.1.3.0' {
         $Task = Get-Content -Path $TaskPath -Raw | ConvertFrom-Json
         $Task.TaskVersion = '20.1.1.0'
         $Task | ConvertTo-Json | Set-Content -Path $TaskPath
         $Before = Get-Content -Path $TaskPath -Raw
+        $Current = Get-Content -Path $NewTaskPath -Raw
         $Warnings = (Repair-PEBuildTask 6>$null 3>&1) -join "`n"
-        $Warnings | Should -BeLike '*PEBuild Task does not need a Repair*'
+        $Warnings | Should -BeLike '*No PEBuild Task needs a Repair*'
         Get-Content -Path $TaskPath -Raw | Should -Be $Before
+        Get-Content -Path $NewTaskPath -Raw | Should -Be $Current
+        Should -Invoke Get-OSMedia -Times 0 -Exactly
+    }
+
+    It 'repairs a Task of version 19.1.3.0' {
+        $Task = Get-Content -Path $TaskPath -Raw | ConvertFrom-Json
+        $Task.TaskVersion = '19.1.3.0'
+        $Task | ConvertTo-Json | Set-Content -Path $TaskPath
+        Repair-PEBuildTask 6>$null 3>$null
+        (Get-Content -Path $TaskPath -Raw | ConvertFrom-Json).TaskVersion | Should -Be '26.10.14.1'
+    }
+
+    It 'repairs the next Task when no OSMedia is selected for a Task' {
+        $Task = Get-Content -Path $TaskPath -Raw | ConvertFrom-Json
+        $Task.MediaName = 'Windows 10 Enterprise x86 1809'
+        $Task | ConvertTo-Json | Set-Content -Path $TaskPath
+        $Task.TaskName = 'Second'
+        $Task.MediaName = 'Windows 10 Enterprise x64 1809'
+        $SecondPath = Join-Path $TaskDirectory 'PEBuild Second.json'
+        $Task | ConvertTo-Json | Set-Content -Path $SecondPath
+        $Before = Get-Content -Path $TaskPath -Raw
+        Repair-PEBuildTask 6>$null 3>$null
+        Get-Content -Path $TaskPath -Raw | Should -Be $Before
+        (Get-Content -Path $SecondPath -Raw | ConvertFrom-Json).OSMGuid | Should -Be ($script:Media | Where-Object {$_.Name -eq $script:Select}).OSMGuid
+    }
+
+    It 'writes the Languages of the OSMedia and keeps a TaskName with umlauts' {
+        $Task = Get-Content -Path $TaskPath -Raw | ConvertFrom-Json
+        $Task.TaskName = 'Win10 PE Österreich'
+        $Task | ConvertTo-Json | Set-Content -Path $TaskPath -Encoding UTF8
+        Repair-PEBuildTask 6>$null 3>$null
+        $Repaired = Get-Content -Path $TaskPath -Raw | ConvertFrom-Json
+        $Repaired.TaskName | Should -BeExactly 'Win10 PE Österreich'
+        @($Repaired.Languages) | Should -Be @('en-US', 'de-DE')
     }
 
     It 'does not change the task when no OSMedia is selected' {

@@ -1,94 +1,41 @@
 function Rename-OSMedia {
+    <#
+    .SYNOPSIS
+    Renames OSMedia directories to the name Import-OSMedia and Update-OSMedia use
+
+    .DESCRIPTION
+    Builds the name of every OSMedia in the OSMedia directory from info\xml\Get-WindowsImage.xml and info\xml\CurrentVersion.xml:
+    <ImageName> <Arch> <DisplayVersion or ReleaseId> <UBR> <Languages>, Windows 7 and 8.1 without the ReleaseId.
+    OSMedia with a different name are listed in Out-GridView, the selected OSMedia are renamed.
+    OSMedia without an OSMGuid get one.
+
+    .EXAMPLE
+    Rename-OSMedia
+    #>
     [CmdletBinding()]
     param ()
 
     Begin {
-        #=================================================
-        #   Header
-        #=================================================
-        #   Write-Host '========================================================================================' -ForegroundColor DarkGray
-        #   Write-Host -ForegroundColor Green "$($MyInvocation.MyCommand.Name) BEGIN"
-        #=================================================
-        #   Get-OSDBuilder
-        #=================================================
         Get-OSDBuilder -CreatePaths -HideDetails
-        #=================================================
-        Write-Verbose '19.1.1 Gather All OSMedia'
-        #=================================================
-        $AllOSMedia = @()
-        $AllOSMedia = Get-ChildItem -Path "$SetOSDBuilderPathOSMedia" -Directory | Select-Object -Property * | Where-Object {Test-Path $(Join-Path $_.FullName "info\xml\Get-WindowsImage.xml")}
+        $AllOSMedia = @(Get-ChildItem -Path "$SetOSDBuilderPathOSMedia" -Directory | Where-Object {Test-Path $(Join-Path $_.FullName "info\xml\Get-WindowsImage.xml")})
     }
 
     Process {
-        #Write-Host '========================================================================================' -ForegroundColor DarkGray
-        #Write-Host "$($MyInvocation.MyCommand.Name) PROCESS"
-
         $RenameOSMedia = foreach ($Item in $AllOSMedia) {
-            #=================================================
-            #Write-Verbose '19.1.1 Get Windows Image Information'
-            #=================================================
             $RenameOSMediaPath = $($Item.FullName)
             Write-Verbose "OSMedia Full Path: $RenameOSMediaPath"
-            
-            $OSMWindowsImage = @()
             $OSMWindowsImage = Import-Clixml -Path "$RenameOSMediaPath\info\xml\Get-WindowsImage.xml"
-            
-            $OSMVersion = $($OSMWindowsImage.Version)
-            Write-Verbose "Version: $OSMVersion"
-
-            $OSMImageName = $($OSMWindowsImage.ImageName)
-            Write-Verbose "ImageName: $OSMImageName"
 
             $OSMArch = $OSMWindowsImage.Architecture
             if ($OSMArch -eq '0') {$OSMArch = 'x86'}
             if ($OSMArch -eq '6') {$OSMArch = 'ia64'}
             if ($OSMArch -eq '9') {$OSMArch = 'x64'}
             if ($OSMArch -eq '12') {$OSMArch = 'x64 ARM'}
-            Write-Verbose "Arch: $OSMArch"
-
-            $OSMEditionId = $($OSMWindowsImage.EditionId)
-            Write-Verbose "EditionId: $OSMEditionId"
-
-            $OSMInstallationType = $($OSMWindowsImage.InstallationType)
-            Write-Verbose "InstallationType: $OSMInstallationType"
-
-            $OSMMajorVersion = $($OSMWindowsImage.MajorVersion)
-            Write-Verbose "MajorVersion: $OSMMajorVersion"
-
-            $OSMMinorVersion = $($OSMWindowsImage.MinorVersion)
-            Write-Verbose "MinorVersion: $OSMMinorVersion"
-
             $OSMBuild = $OSMWindowsImage.Build
-            Write-Verbose "Build: $OSMBuild"
 
-            $OSMLanguages = $($OSMWindowsImage.Languages)
-            Write-Verbose "Languages: $OSMLanguages"
-
-            $OperatingSystem = ''
-            if ($OSMMajorVersion -eq 6 -and $OSMInstallationType -eq 'Client') {$OperatingSystem = 'Windows 7'}
-            if ($OSMMajorVersion -eq 10 -and $OSMInstallationType -eq 'Client') {
-                if ($OSMImageName -match ' 11 ') {
-                    $OperatingSystem = 'Windows 11'
-                }
-                else {
-                    $OperatingSystem = 'Windows 10'
-                }
-            }
-            if ($OSMMajorVersion -eq 10 -and $OSMInstallationType -eq 'Server' -and $OSMImageName -match '2016') {$OperatingSystem = 'Server 2016'}
-            if ($OSMMajorVersion -eq 10 -and $OSMInstallationType -eq 'Server' -and $OSMImageName -match '2019') {$OperatingSystem = 'Server 2019'}
-            if ($OSMMajorVersion -eq 10 -and $OSMInstallationType -eq 'Server' -and $OSMImageName -match '2022') {$OperatingSystem = 'Server 2022'}
-
-            $OSMUBR = $($OSMWindowsImage.UBR)
-            Write-Verbose "UBR: $OSMUBR"
-			
-            #   OSMFamily V1
-            $OSMFamilyV1 = $(Get-Date -Date $($OSMWindowsImage.CreatedTime)).ToString("yyyyMMddHHmmss") + $OSMEditionID
-            #   OSMFamily V2
-            $OSMFamily = $OSMInstallationType + " " + $OSMEditionId + " " + $OSMArch + " " + [string]$OSMBuild + " " + $OSMLanguages
-            Write-Verbose "OSMFamily: $OSMFamily"
-
-            #$OSMWindowsImage | ForEach {$_.PSObject.Properties.Remove('Guid')}
-
+            #=================================================
+            #   OSMGuid
+            #=================================================
             $OSMGuid = $($OSMWindowsImage.OSMGuid)
             if (-not ($OSMGuid)) {
                 $OSMGuid = $(New-Guid)
@@ -101,77 +48,59 @@ function Rename-OSMedia {
                 $OSMWindowsImage | ConvertTo-Json | Out-File "$RenameOSMediaPath\info\json\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-Get-WindowsImage.json"
                 (Get-Content "$RenameOSMediaPath\WindowsImage.txt") | Where-Object {$_.Trim(" `t")} | Set-Content "$RenameOSMediaPath\WindowsImage.txt"
                 Write-Verbose "Guid (New): $OSMGuid"
-            } else {
+            }
+            else {
                 Write-Verbose "Guid: $OSMGuid"
             }
-
             #=================================================
-            #Write-Verbose '19.1.1 Gather Registry Information'
+            #   ReleaseId like Import-OSMedia and Update-OSMedia: DisplayVersion, ReleaseId, Build
             #=================================================
-            $OSMRegistry = @()
+            [string]$OSMReleaseId = ''
             if (Test-Path "$RenameOSMediaPath\info\xml\CurrentVersion.xml") {
-                Write-Verbose "Registry: $RenameOSMediaPath\info\xml\CurrentVersion.xml"
                 $OSMRegistry = Import-Clixml -Path "$RenameOSMediaPath\info\xml\CurrentVersion.xml"
-            } else {
-                Write-Verbose "Registry: $RenameOSMediaPath\info\xml\CurrentVersion.xml (Not Found)"
+                [string]$OSMReleaseId = $OSMRegistry.ReleaseId
+                if ($OSMRegistry.DisplayVersion) {[string]$OSMReleaseId = $OSMRegistry.DisplayVersion}
             }
-            [string]$OSMReleaseId = $($OSMRegistry.ReleaseId)
-
-            if ($OSMBuild -eq 7600) {$OSMReleaseId = 7600}
-            if ($OSMBuild -eq 7601) {$OSMReleaseId = 7601}
-            if ($OSMBuild -eq 9600) {$OSMReleaseId = 9600}
             if ($OSMBuild -eq 10240) {$OSMReleaseId = 1507}
             if ($OSMBuild -eq 14393) {$OSMReleaseId = 1607}
             if ($OSMBuild -eq 15063) {$OSMReleaseId = 1703}
             if ($OSMBuild -eq 16299) {$OSMReleaseId = 1709}
             if ($OSMBuild -eq 17134) {$OSMReleaseId = 1803}
             if ($OSMBuild -eq 17763) {$OSMReleaseId = 1809}
-            #if ($OSMBuild -eq 18362) {$OSMReleaseId = 1903}
-            #if ($OSMBuild -eq 18363) {$OSMReleaseId = 1909}
-            #if ($OSMBuild -eq 19041) {$OSMReleaseId = 2004}
-            #if ($OSMBuild -eq 19042) {$OSMReleaseId = '20H2'}
-            #if ($OSMBuild -eq 19043) {$OSMReleaseId = '21H1'}
-            #if ($OSMBuild -eq 19044) {$OSMReleaseId = '21H2'}
-
             Write-Verbose "ReleaseId: $OSMReleaseId"
-
-            if ($OSMReleaseId -eq 7601) {$OSMReleaseId = 'SP1'}
-
-            $FullNameFormat = "$OSMImageName $OSMArch $OSMReleaseId $OSMUBR $($OSMWindowsImage.Languages)"
-
+            #=================================================
+            #   Name
+            #=================================================
+            if ($OSMWindowsImage.MajorVersion -eq 10) {
+                $FullNameFormat = "$($OSMWindowsImage.ImageName) $OSMArch $OSMReleaseId $($OSMWindowsImage.UBR) $($OSMWindowsImage.Languages)"
+            }
+            else {
+                $FullNameFormat = "$($OSMWindowsImage.ImageName) $OSMArch $($OSMWindowsImage.UBR) $($OSMWindowsImage.Languages)"
+            }
             $FullNameFormat = $FullNameFormat -replace '\(', ''
             $FullNameFormat = $FullNameFormat -replace '\)', ''
-
             if ($($($OSMWindowsImage.Languages).count) -eq 1) {$FullNameFormat = $FullNameFormat.replace(' en-US','')}
+            $FullNameFormat = $FullNameFormat.Trim()
 
             if (!($Item.Name -eq $FullNameFormat)) {
-                #=================================================
-                #Write-Verbose '19.1.1 Object Properties'
-                #=================================================
-                $ObjectProperties = @{
-                    
-                    FullNameFormat      = $FullNameFormat
-                    Name                = $Item.Name
-                    FullName            = $Item.FullName
+                [PSCustomObject]@{
+                    FullNameFormat  = $FullNameFormat
+                    Name            = $Item.Name
+                    FullName        = $Item.FullName
                 }
-                New-Object -TypeName PSObject -Property $ObjectProperties
-                Write-Verbose ""
             }
-
         }
 
-        #=================================================
-        #Write-Verbose '19.1.3 Output'
-        #=================================================
         $RenameOSMedia = $RenameOSMedia | Select-Object FullNameFormat,Name,FullName | Out-GridView -PassThru -Title 'Rename-OSMedia: Select one or more OSMedia to Rename and press OK'
-        foreach ($Item in $RenameOSMedia){
+        foreach ($Item in $RenameOSMedia) {
+            if (Test-Path -Path (Join-Path "$SetOSDBuilderPathOSMedia" "$($Item.FullNameFormat)")) {
+                Write-Warning "Skipping $($Item.FullName), an OSMedia $($Item.FullNameFormat) already exists"
+                Continue
+            }
             Write-Warning "Renaming $($Item.FullName) to $($Item.FullNameFormat)"
             Rename-Item -Path "$($Item.FullName)" -NewName "$($Item.FullNameFormat)" -Force
         }
     }
 
-    End {
-        #Write-Host '========================================================================================' -ForegroundColor DarkGray
-        #Write-Host "$($MyInvocation.MyCommand.Name) END"
-    }
+    End {}
 }

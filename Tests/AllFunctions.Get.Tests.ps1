@@ -272,66 +272,6 @@ Describe 'Get-PEBuildTask' {
     }
 }
 
-Describe 'Get-OSDFromJson' {
-    It 'converts nested JSON objects to hashtables and arrays to lists' {
-        $Path = Join-Path $TestDrive 'Task.json'
-        Set-Content -Path $Path -Value '{"TaskName":"Win11","TaskVersion":"25.10.14.1","Media":{"Arch":"x64","Build":26200},"Languages":["de-DE","fr-FR"],"Drivers":[{"Name":"Dell"},{"Name":"HP"}]}'
-        $Result = Get-OSDFromJson -Path $Path
-        $Result | Should -BeOfType [hashtable]
-        $Result.TaskName | Should -Be 'Win11'
-        $Result.Media | Should -BeOfType [hashtable]
-        $Result.Media.Arch | Should -Be 'x64'
-        $Result.Media.Build | Should -Be 26200
-        @($Result.Languages) | Should -Be @('de-DE', 'fr-FR')
-        $Result.Drivers[1] | Should -BeOfType [hashtable]
-        $Result.Drivers[1].Name | Should -Be 'HP'
-    }
-
-    It 'returns an empty hashtable when the file does not exist' {
-        $Result = Get-OSDFromJson (Join-Path $TestDrive 'Missing.json')
-        $Result | Should -BeOfType [hashtable]
-        $Result.Count | Should -Be 0
-    }
-
-    It 'returns $null for a JSON null without an error' {
-        $Path = Join-Path $TestDrive 'Null.json'
-        Set-Content -Path $Path -Value '{"CustomName":null}'
-        $Result = Get-OSDFromJson -Path $Path -ErrorVariable JsonErrors 2>$null
-        $Result.ContainsKey('CustomName') | Should -BeTrue
-        $Result.CustomName | Should -BeNullOrEmpty
-        $JsonErrors | Should -BeNullOrEmpty
-    }
-}
-
-Describe 'Get-Value' {
-    It 'returns a scalar unchanged' {
-        Get-Value -value 'Windows 11' | Should -BeExactly 'Windows 11'
-        Get-Value -value 26200 | Should -Be 26200
-    }
-
-    It 'converts a PSCustomObject recursively to a hashtable' {
-        $Result = Get-Value -value ([PSCustomObject]@{Name = 'Win11'; Media = [PSCustomObject]@{Arch = 'x64'}})
-        $Result | Should -BeOfType [hashtable]
-        $Result.Name | Should -Be 'Win11'
-        $Result.Media | Should -BeOfType [hashtable]
-        $Result.Media.Arch | Should -Be 'x64'
-    }
-
-    It 'converts the items of an array' {
-        $Result = @(Get-Value -value @([PSCustomObject]@{Name = 'Dell'}, 'HP'))
-        $Result.Count | Should -Be 2
-        $Result[0] | Should -BeOfType [hashtable]
-        $Result[0].Name | Should -Be 'Dell'
-        $Result[1] | Should -Be 'HP'
-    }
-
-    It 'keeps a JSON array with one item as a list' {
-        $Result = Get-Value -value ([PSCustomObject]@{Languages = @('de-DE'); Drivers = @()})
-        , $Result.Languages | Should -BeOfType [System.Collections.IList]
-        , $Result.Drivers | Should -BeOfType [System.Collections.IList]
-    }
-}
-
 Describe 'Get-OSDUpdateDownloads' {
     BeforeEach {
         $SetOSDBuilderPathUpdates = Join-Path $TestDrive ([guid]::NewGuid().Guid)

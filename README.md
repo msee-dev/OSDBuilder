@@ -140,7 +140,12 @@ The region is set with the regional format, system locale and keyboard
 * `-DefaultLanguage de-DE` sets `Set-AllIntl` (display language)
 * `-RegionalFormat de-AT` sets `Set-UserLocale`, `Set-SysLocale` and `Set-InputLocale` (default keyboard of de-AT: `0C07:00000407`, German keyboard),
   these settings take precedence over `Set-AllIntl`
+* The Language Features of the display language cover the region (Basic, OCR and Handwriting of de-de for de-AT),
+  the own Language Features of the region on the Languages and Optional Features ISO are added too (`TextToSpeech-de-at`),
+  see the [LP to FOD mapping table](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/features-on-demand-language-fod).
+  They require a display language of the same language in `-Languages` (de-DE for de-AT), otherwise the script warns and skips them
 * With `New-OSBuildTask` use `-SetAllIntl de-DE -SetUserLocale de-AT -SetSysLocale de-AT -SetInputLocale de-AT`
+  and add the Language Features of the region to `-LanguageFeature`
 * The example script stops with a hint when a region like `de-AT` is passed in `-Languages`
 
 ### Local Experience Packs (LXP)

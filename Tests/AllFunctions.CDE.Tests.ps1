@@ -312,31 +312,39 @@ Describe 'Enable-WinREWiFi' {
     BeforeEach {
         $ScriptName = 'New-OSBuild'; $WinREWiFi = $true; $OSArchitecture = 'x64'; $MountWinRE = 'C:\Mount\WinRE'
         $DriverCab = New-TestFile -Path (Join-Path (Join-Path $TestDrive 'Downloads') 'WiFi-23.110.0-Driver64-Win10-Win11.cab')
-        Mock Get-OSDCatalogIntelWirelessDriver {
-            [PSCustomObject]@{OSVersion = '6.3'; OSArch = 'x64'; DriverUrl = 'https://downloadmirror.intel.com/win81-x64.zip'}
-            [PSCustomObject]@{OSVersion = '10.0'; OSArch = 'x86'; DriverUrl = 'https://downloadmirror.intel.com/win10-x86.zip'}
-            [PSCustomObject]@{OSVersion = '10.0'; OSArch = 'x64'; DriverUrl = 'https://downloadmirror.intel.com/win10-x64.zip'}
-            [PSCustomObject]@{OSVersion = '10.0'; OSArch = 'x64'; DriverUrl = 'https://downloadmirror.intel.com/win10-x64-old.zip'}
-        }
+        #Get-IntelWirelessDriverPack of the OSD module (Get-OSDCatalogIntelWirelessDriver was removed in OSD 23.3.15.1)
+        #the offline catalog of OSD 26.10 stores OsVersion and OsArch as arrays, OsVersion 11.0
+        Mock Get-IntelWirelessDriverPack {
+            [PSCustomObject]@{OsVersion = @('11.0'); OsArch = @('x64'); DriverUrl = 'https://downloadmirror.intel.com/868044/WiFi-23.170.0-Driver64-Win10-Win11.zip'}
+            [PSCustomObject]@{OsVersion = '10.0'; OsArch = 'x64'; DriverUrl = 'https://downloadmirror.intel.com/WiFi-23.110.0-Driver64-Win10-Win11.zip'}
+        } -ParameterFilter {$CompatArch -eq 'x64'}
         Mock Test-WebConnection {$true}
         Mock Save-WebFile {$DriverCab}
         Mock Expand-Archive {}
         Mock Add-WindowsDriver {}
     }
 
-    It 'expands the first Windows 10 x64 Intel Wireless driver and adds it to WinRE' {
+    It 'expands the newest x64 Intel Wireless driver of the OSD module and adds it to WinRE' {
         $ExpandPath = Join-Path $DriverCab.Directory $DriverCab.BaseName
         Enable-WinREWiFi 6>$null 4>$null
-        Should -Invoke Save-WebFile -Times 1 -Exactly -ParameterFilter {$SourceUrl -eq 'https://downloadmirror.intel.com/win10-x64.zip'}
+        Should -Invoke Save-WebFile -Times 1 -Exactly -ParameterFilter {$SourceUrl -eq 'https://downloadmirror.intel.com/868044/WiFi-23.170.0-Driver64-Win10-Win11.zip'}
         Should -Invoke Expand-Archive -Times 1 -Exactly -ParameterFilter {("$Path" -like "*$($DriverCab.Name)") -and ($DestinationPath -eq $ExpandPath) -and $Force}
         Should -Invoke Add-WindowsDriver -Times 1 -Exactly -ParameterFilter {($Path -eq 'C:\Mount\WinRE') -and ($Driver -eq $ExpandPath) -and $Recurse -and $ForceUnsigned}
     }
 
-    It 'uses the x86 driver for an x86 Operating System' {
+    It 'warns and adds no driver for an x86 Operating System, Intel has no x86 Wireless driver' {
         $OSArchitecture = 'x86'
-        Enable-WinREWiFi 6>$null 4>$null
-        Should -Invoke Test-WebConnection -Times 1 -Exactly -ParameterFilter {$Uri -eq 'https://downloadmirror.intel.com/win10-x86.zip'}
-        Should -Invoke Save-WebFile -Times 1 -Exactly -ParameterFilter {$SourceUrl -eq 'https://downloadmirror.intel.com/win10-x86.zip'}
+        $Warnings = (Enable-WinREWiFi 6>$null 4>$null 3>&1) -join "`n"
+        $Warnings | Should -BeLike '*No Intel Wireless driver for x86*'
+        Should -Invoke Save-WebFile -Times 0 -Exactly
+        Should -Invoke Add-WindowsDriver -Times 0 -Exactly
+    }
+
+    It 'warns when the OSD module has no Intel Wireless driver' {
+        Mock Get-IntelWirelessDriverPack {} -ParameterFilter {$CompatArch -eq 'x64'}
+        $Warnings = (Enable-WinREWiFi 6>$null 4>$null 3>&1) -join "`n"
+        $Warnings | Should -BeLike '*No Intel Wireless driver for x64*'
+        Should -Invoke Test-WebConnection -Times 0 -Exactly
     }
 
     It 'works for New-OSDCloudOSMedia' {
@@ -355,7 +363,7 @@ Describe 'Enable-WinREWiFi' {
     It 'warns when the driver cannot be downloaded' {
         Mock Test-WebConnection {$false}
         $Warnings = (Enable-WinREWiFi 6>$null 3>&1) -join "`n"
-        $Warnings | Should -BeLike '*Unable to connect to https://downloadmirror.intel.com/win10-x64.zip*'
+        $Warnings | Should -BeLike '*Unable to connect to https://downloadmirror.intel.com/868044/WiFi-23.170.0-Driver64-Win10-Win11.zip*'
         Should -Invoke Save-WebFile -Times 0 -Exactly
     }
 
@@ -365,7 +373,7 @@ Describe 'Enable-WinREWiFi' {
     ) {
         Set-Variable -Name $Variable -Value $Value
         Enable-WinREWiFi 6>$null
-        Should -Invoke Get-OSDCatalogIntelWirelessDriver -Times 0 -Exactly
+        Should -Invoke Get-IntelWirelessDriverPack -Times 0 -Exactly
     }
 }
 

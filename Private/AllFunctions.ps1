@@ -2601,19 +2601,15 @@ function Enable-WinREWiFi {
     #=================================================
     #   Execute
     #=================================================
+    #Get-IntelWirelessDriverPack of the OSD module returns the Intel Wireless drivers for Windows 10 and 11 newest first,
+    #it replaced Get-OSDCatalogIntelWirelessDriver in OSD 23.3.15.1 and supports only x64
+    $IntelWirelessDriverUrl = $null
     if ($OSArchitecture -eq 'x64') {
-        $OSDCatalogIntelWirelessDriver = Get-OSDCatalogIntelWirelessDriver | `
-            Where-Object {($_.OSVersion -match '10.0')} | `
-            Where-Object {($_.OSArch -match 'x64')} | `
-            Select-Object -First 1
-        $IntelWirelessDriverUrl = $OSDCatalogIntelWirelessDriver.DriverUrl
+        $IntelWirelessDriverUrl = (Get-IntelWirelessDriverPack -CompatArch 'x64' | Select-Object -First 1).DriverUrl
     }
-    else {
-        $OSDCatalogIntelWirelessDriver = Get-OSDCatalogIntelWirelessDriver | `
-            Where-Object {($_.OSVersion -match '10.0')} | `
-            Where-Object {($_.OSArch -match 'x86')} | `
-            Select-Object -First 1
-        $IntelWirelessDriverUrl = $OSDCatalogIntelWirelessDriver.DriverUrl
+    if (-not $IntelWirelessDriverUrl) {
+        Write-Warning "No Intel Wireless driver for $OSArchitecture in the OSD module, WinRE WiFi is not enabled"
+        Return
     }
 
     if (Test-WebConnection -Uri $IntelWirelessDriverUrl) {
@@ -2909,7 +2905,7 @@ function Get-FeatureUpdateDownloads {
     Language, Activation, Build, `
     @{Name = 'UpdateOS'; Expression = { $_.Version } }, `
     @{Name = 'UpdateBuild'; Expression = { $_.ReleaseID } }, `
-    @{Name = 'UpdateArch'; Expression = { $_.Architecture } }, `
+    @{Name = 'UpdateArch'; Expression = { if ($_.Architecture -eq 'amd64') {'x64'} else {$_.Architecture} } }, `
     @{Name = 'CreationDate'; Expression = { $_.ReleaseDate } }, `
     FileName, `
     @{Name = 'OriginUri'; Expression = { $_.Url } }, `

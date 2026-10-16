@@ -71,6 +71,18 @@ Describe 'Get-FeatureUpdateDownloads' {
         $Downloads[1].Title | Should -Be 'Windows 11 24H2 x64 en-us Volume 26100.4349'
     }
 
+    It 'maps the Architecture amd64 of OSD 26.10 to x64' {
+        Mock Get-OSDCloudOperatingSystems {
+            [PSCustomObject]@{
+                Status = $null; ReleaseDate = $null; Name = 'Windows 11 25H2 amd64 de-de Volume 26200.6584'; Version = 'Windows 11'; ReleaseID = '25H2'
+                Architecture = 'amd64'; Language = 'de-de'; Activation = 'Volume'; Build = '26200.6584'
+                FileName = '26200.6584.250915-1905.25h2_ge_release_svc_refresh_CLIENTBUSINESS_VOL_x64FRE_de-de.esd'
+                Url = 'http://dl.delivery.mp.microsoft.com/filestreamingservice/files/client_business_vol_de-de.esd'; SHA1 = 'aabbccddeeff00112233445566778899aabbccdd'
+            }
+        }
+        @(Get-FeatureUpdateDownloads).UpdateArch | Should -Be 'x64'
+    }
+
     It 'maps the properties to the OSDBuilder download properties' {
         $Download = $Downloads[1]
         $Download.UpdateOS | Should -Be 'Windows 11'

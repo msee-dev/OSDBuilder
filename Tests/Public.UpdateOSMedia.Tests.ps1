@@ -3,10 +3,6 @@ Update-OSMedia is the orchestrator that updates an imported OSMedia: it selects 
 downloads the missing ones and calls the Private worker functions in a fixed order on a working copy
 (OSMedia\buildyyMMddhhmm) that is renamed to the new OSMedia name at the end.
 The Private worker functions are mocked (they have their own tests), the tests assert the orchestration.
-
-The Process block of Public\Update-OSMedia.ps1 is shared with New-OSBuild (the bodies are identical except for some
-messages). The New-OSBuild branches are covered by invoking the same function body under the name New-OSBuild,
-see the Context 'shared New-OSBuild code path'.
 #>
 BeforeAll {
     . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
@@ -158,23 +154,22 @@ BeforeAll {
     function Invoke-UpdateOSMedia {
         <#
         .SYNOPSIS
-        Runs Update-OSMedia (or the shared body as New-OSBuild), returns the warnings
+        Runs Update-OSMedia, returns the warnings
         Break in the production code leaves the nearest loop, the foreach keeps it inside this function
         #>
         param (
             [hashtable]$Parameters = @{},
-            [string]$Command = 'Update-OSMedia',
             $InputObject
         )
         #collected in a list, an assignment would be lost when Break leaves the pipeline
         $Warnings = New-Object System.Collections.Generic.List[string]
         foreach ($Guard in 1) {
             if ($null -ne $InputObject) {
-                $InputObject | & $Command @Parameters 3>&1 6>$null | ForEach-Object {
+                $InputObject | Update-OSMedia @Parameters 3>&1 6>$null | ForEach-Object {
                     if ($_ -is [System.Management.Automation.WarningRecord]) {$Warnings.Add($_.Message)}
                 }
             } else {
-                & $Command @Parameters 3>&1 6>$null | ForEach-Object {
+                Update-OSMedia @Parameters 3>&1 6>$null | ForEach-Object {
                     if ($_ -is [System.Management.Automation.WarningRecord]) {$Warnings.Add($_.Message)}
                 }
             }
@@ -315,20 +310,6 @@ Describe 'Update-OSMedia' {
             $Warnings | Should -BeNullOrEmpty
             Should -Invoke Get-WindowsImage -Times 0 -Exactly
             Should -Invoke Mount-InstallwimOS -Times 0 -Exactly
-        }
-
-        It 'removes legacy and updated OSMedia when $UpdateNeeded is set by the caller' {
-            #UpdateNeeded is not a parameter of Update-OSMedia (any more), the variable is read from the calling scope
-            $UpdateNeeded = [switch]$true
-            Mock Get-OSMedia {
-                [PSCustomObject]@{Name = $Win11Name; MajorVersion = 10; Servicing = ''; Cumulative = 'KB5066835'; Adobe = 'KB4580325'}
-                [PSCustomObject]@{Name = 'Windows 10 Enterprise x64 22H2 19045.6456'; MajorVersion = 10; Servicing = 'KB5031539'; Cumulative = 'KB5066791'; Adobe = 'KB4580325'}
-                [PSCustomObject]@{Name = 'Windows 7 Enterprise x64 7601.17514'; MajorVersion = 6; InstallationType = 'Client'; Version = '6.1.7601.17514'; Servicing = ''}
-            }
-            Mock Out-GridView {$script:Seen['Grid'] = @($script:Seen['Grid']) + @($InputObject.Name) | Where-Object {$_}; $InputObject}
-            $Warnings = Invoke-UpdateOSMedia
-            $Warnings | Should -Contain 'UpdateNeeded does not support Legacy Operating Systems'
-            $script:Seen['Grid'] | Should -Be @($Win11Name)
         }
 
     }
@@ -769,229 +750,4 @@ Describe 'Update-OSMedia' {
         }
     }
 
-    Context 'shared New-OSBuild code path' {
-        BeforeAll {
-            #The Process block of Update-OSMedia.ps1 contains the New-OSBuild branches, run the same body as New-OSBuild
-            Set-Item -Path function:script:New-OSBuild -Value (Get-Command -Name Update-OSMedia -CommandType Function).ScriptBlock
-        }
-        AfterAll {
-            Remove-Item -Path function:script:New-OSBuild -ErrorAction SilentlyContinue
-        }
-
-        BeforeEach {
-            #New-OSBuild parameters that Update-OSMedia does not have, read from the calling scope
-            $ByTaskName = $null; $SkipTemplates = $null; $EnableNetFX = $null; $SelectContentPacks = $null; $SkipContentPacks = $null
-            $DontUseNewestMedia = $null; $IncludeKB = $null; $ExcludeKB = $null; $OSDVHD = $null; $OSDInfo = $null
-
-            $SourceOSMedia = New-TestOSMedia -Parent $global:SetOSDBuilderPathOSMedia -Name $Win11Name -Image 'Win11Enterprise24H2' -Registry 'Win11-24H2-1742'
-            $script:PostImage = New-TestWindowsImage -Key 'Win11Enterprise24H2' -ImagePath 'build' -Property @{SPBuild = 6899}
-
-            $global:SetOSDBuilderPathTasks = Join-Path $Root 'Tasks'
-            $TaskFile = Join-Path $global:SetOSDBuilderPathTasks 'OSBuild Win11 Enterprise x64 24H2.json'
-            New-Item -Path $global:SetOSDBuilderPathTasks -ItemType Directory -Force | Out-Null
-            Copy-Item -Path $script:FixtureTask -Destination $TaskFile
-            $script:TaskItem = [PSCustomObject]@{TaskName = 'Win11 Enterprise x64 24H2'; FullName = $TaskFile}
-            Mock Get-OSBuildTask {$script:TaskItem}
-
-            $script:LatestOSMedia = [PSCustomObject]@{
-                Name = $Win11Name; FullName = $SourceOSMedia.FullName; Revision = 'OK'; Updates = 'OK'
-                OSMFamily = '26100 Enterprise x64 Client en-US'; OSMGuid = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0'
-            }
-            Mock Get-OSMedia {$script:LatestOSMedia}
-            Mock Get-TaskContentPacks {[PSCustomObject]@{Name = 'Selected'}}
-            $BuildParameters = @{Download = $true; Execute = $true}
-        }
-
-        It 'builds the OSBuild of the task selected in Out-GridView with its CustomName' {
-            Mock Out-GridView {$script:Seen['GridTitle'] = $Title; $InputObject}
-            Invoke-UpdateOSMedia -Command 'New-OSBuild' -Parameters $BuildParameters | Out-Null
-            $script:Seen['GridTitle'] | Should -BeLike 'OSBuild Tasks: Select one or more Tasks*'
-            Should -Invoke Show-TaskInfo -Times 2 -Exactly
-            Get-RenamedOSMedia -Path $global:SetOSDBuilderPathOSBuilds | Should -Be @('Win11 Ent 24H2 Corp 26100.6899')
-            Should -Invoke Start-Transcript -Times 1 -Exactly -ParameterFilter {$Path -like '*OSBuilds*New-OSBuild.log'}
-        }
-
-        It 'warns when no task is selected' {
-            Mock Out-GridView {}
-            $Warnings = Invoke-UpdateOSMedia -Command 'New-OSBuild' -Parameters $BuildParameters
-            $Warnings | Should -Contain 'OSBuild Task was not selected or found . . . Exiting!'
-            Should -Invoke Show-TaskInfo -Times 0 -Exactly
-        }
-
-        It 'uses the task of $ByTaskName without Out-GridView' {
-            $ByTaskName = 'Win11 Enterprise x64 24H2'
-            New-TestOSMedia -Name $Win11Name -Image 'Win11Enterprise24H2' -Registry 'Win11-24H2-1742' | Out-Null
-            Invoke-UpdateOSMedia -Command 'New-OSBuild' -Parameters $BuildParameters | Out-Null
-            Should -Invoke Out-GridView -Times 0 -Exactly
-            Get-RenamedOSMedia -Path $global:SetOSDBuilderPathOSBuilds | Should -Be @('Win11 Ent 24H2 Corp 26100.6899')
-        }
-
-        It 'renames WinPEAddDaRT to WinPEDaRT in the task file' {
-            $ByTaskName = 'Win11 Enterprise x64 24H2'
-            Invoke-UpdateOSMedia -Command 'New-OSBuild' | Out-Null
-            $TaskText = Get-Content -Path $script:TaskItem.FullName -Raw
-            $TaskText | Should -Not -BeLike '*WinPEAddDaRT*'
-            $TaskText | Should -BeLike '*"WinPEDaRT"*'
-        }
-
-        It 'adds the _Global and the task ContentPacks when ContentPacks are enabled' {
-            $ByTaskName = 'Win11 Enterprise x64 24H2'
-            Mock Get-IsContentPacksEnabled {$true}
-            Mock Show-TaskInfo {$script:Seen['ContentPacks'] = @($ContentPacks)}
-            Invoke-UpdateOSMedia -Command 'New-OSBuild' | Out-Null
-            $script:Seen['ContentPacks'] | Should -Be @('_Global', 'Corp')
-        }
-
-        It 'uses only the _Global ContentPack when the task has no ContentPacks' {
-            $ByTaskName = 'Win11 Enterprise x64 24H2'
-            $Task = Get-Content -Path $script:TaskItem.FullName -Raw | ConvertFrom-Json
-            $Task.ContentPacks = $null
-            $Task | ConvertTo-Json | Set-Content -Path $script:TaskItem.FullName
-            Mock Get-IsContentPacksEnabled {$true}
-            Mock Show-TaskInfo {$script:Seen['ContentPacks'] = @($ContentPacks)}
-            Invoke-UpdateOSMedia -Command 'New-OSBuild' | Out-Null
-            $script:Seen['ContentPacks'] | Should -Be @('_Global')
-        }
-
-        It 'selects the ContentPacks with $SelectContentPacks' {
-            $ByTaskName = 'Win11 Enterprise x64 24H2'; $SelectContentPacks = [switch]$true
-            Mock Get-IsContentPacksEnabled {$true}
-            Mock Show-TaskInfo {$script:Seen['ContentPacks'] = @($ContentPacks)}
-            Invoke-UpdateOSMedia -Command 'New-OSBuild' | Out-Null
-            Should -Invoke Get-TaskContentPacks -Times 1 -Exactly -ParameterFilter {$Select}
-            $script:Seen['ContentPacks'] | Should -Be @('Selected')
-        }
-
-        It 'stops with a task older than 19.1.4.0' {
-            $ByTaskName = 'Win11 Enterprise x64 24H2'
-            (Get-Content -Path $script:TaskItem.FullName -Raw).Replace('23.10.24.1', '19.1.3.0') | Set-Content -Path $script:TaskItem.FullName
-            $Warnings = Invoke-UpdateOSMedia -Command 'New-OSBuild' -Parameters $BuildParameters
-            $Warnings | Should -Contain 'OSDBuilder Tasks need to be version 19.1.4.0 or newer'
-            Should -Invoke Get-WindowsImage -Times 0 -Exactly
-        }
-
-        It 'stops when there is no OSMedia of the task OSMFamily' {
-            $ByTaskName = 'Win11 Enterprise x64 24H2'
-            Mock Get-OSMedia {} -ParameterFilter {$Revision -eq 'OK'}
-            $Warnings = Invoke-UpdateOSMedia -Command 'New-OSBuild' -Parameters $BuildParameters
-            $Warnings | Should -Contain 'Unable to find a matching OSMFamily 26100 Enterprise x64 Client en-US'
-            Should -Invoke Get-WindowsImage -Times 0 -Exactly
-        }
-
-        It 'finds the OSMedia of a Taskless task by name' {
-            $ByTaskName = 'Taskless'
-            $script:TaskItem.TaskName = 'Taskless'
-            (Get-Content -Path $script:TaskItem.FullName -Raw).Replace('"Win11 Enterprise x64 24H2"', '"Taskless"').Replace('23.10.24.1', '1.0') | Set-Content -Path $script:TaskItem.FullName
-            Invoke-UpdateOSMedia -Command 'New-OSBuild' | Out-Null
-            Should -Invoke Show-TaskInfo -Times 1 -Exactly
-            Should -Invoke Show-MediaImageInfoOS -Times 1 -Exactly
-        }
-
-        It 'warns when the newest OSMedia does not have the latest updates' {
-            $ByTaskName = 'Win11 Enterprise x64 24H2'
-            $script:LatestOSMedia.Updates = 'Update'
-            $Warnings = Invoke-UpdateOSMedia -Command 'New-OSBuild'
-            $Warnings | Should -Contain "Update-OSMedia -Name '$Win11Name' -Download -Execute"
-        }
-
-        It 'merges the Global and the OSMFamily templates and skips other templates' {
-            $ByTaskName = 'Win11 Enterprise x64 24H2'
-            New-Item -Path $global:SetOSDBuilderPathTemplates -ItemType Directory -Force | Out-Null
-            $TemplateBase = Get-Content -Path $script:FixtureTask -Raw | ConvertFrom-Json
-            $GlobalTemplate = $TemplateBase | Select-Object -Property *
-            #every list of the Global template has an item
-            foreach ($Property in @($GlobalTemplate.PSObject.Properties | Where-Object {$_.Value -is [array]} | Select-Object -ExpandProperty Name)) {
-                $GlobalTemplate.$Property = @("$Property-Global")
-            }
-            $GlobalTemplate.TaskName = 'Global Corp'; $GlobalTemplate.Drivers = @('Global\Drivers'); $GlobalTemplate.EnableNetFX3 = $true; $GlobalTemplate.ContentPacks = @('GlobalPack')
-            $GlobalTemplate | Add-Member -NotePropertyName SetAllIntl -NotePropertyValue 'de-DE'
-            foreach ($Property in 'StartLayoutXML', 'UnattendXML', 'LangSetInputLocale', 'LangSetSKUIntlDefaults', 'LangSetSetupUILang', 'LangSetSysLocale', 'LangSetUILang', 'LangSetUILangFallback', 'LangSetUserLocale') {
-                $GlobalTemplate.$Property = "$Property-Global"
-            }
-            $GlobalTemplate.WinPEAutoExtraFiles = $true; $GlobalTemplate.WinPEOSDCloud = $true; $GlobalTemplate.WinREWiFi = $true; $GlobalTemplate.WinPEAddDaRT = 'DaRT10'
-            $GlobalTemplate | ConvertTo-Json | Set-Content -Path (Join-Path $global:SetOSDBuilderPathTemplates 'OSBuild Global Corp.json')
-            $Family = $TemplateBase | Select-Object -Property *
-            $Family.TaskName = 'Win11 Family'; $Family.Drivers = @('Family\Drivers')
-            $Family | ConvertTo-Json | Set-Content -Path (Join-Path $global:SetOSDBuilderPathTemplates 'OSBuild Win11 Family.json')
-            $Other = $TemplateBase | Select-Object -Property *
-            $Other.TaskName = 'Win10 Other'; $Other.OSMFamily = '19041 Enterprise x64 Client en-US'; $Other.Drivers = @('Other\Drivers')
-            $Other | ConvertTo-Json | Set-Content -Path (Join-Path $global:SetOSDBuilderPathTemplates 'OSBuild Win10 Other.json')
-
-            Mock Add-ContentDriversOS {
-                $script:Seen['Drivers'] = @($Drivers); $script:Seen['EnableNetFX3'] = $EnableNetFX3; $script:Seen['WinPEDaRT'] = $WinPEDaRT; $script:Seen['SetUILang'] = $SetUILang
-                $script:Seen['RemoveAppx'] = @($RemoveAppx); $script:Seen['LanguagePacks'] = @($LanguagePacks); $script:Seen['AddWindowsCapability'] = @($AddWindowsCapability)
-                $script:Seen['WinPEADKSE'] = @($WinPEADKSE); $script:Seen['ContentPacks'] = @($ContentPacks)
-            }
-            Invoke-UpdateOSMedia -Command 'New-OSBuild' -Parameters $BuildParameters | Out-Null
-            #task, Global template, OSMFamily template
-            $script:Seen['RemoveAppx'] | Should -Be @('Microsoft.BingNews_4.55.62231.0_neutral_~_8wekyb3d8bbwe', 'RemoveAppxProvisionedPackage-Global', 'Microsoft.BingNews_4.55.62231.0_neutral_~_8wekyb3d8bbwe')
-            $script:Seen['LanguagePacks'] | Should -Be @('LanguagePack-Global')
-            $script:Seen['AddWindowsCapability'] | Should -Be @('OpenSSH.Server~~~~0.0.1.0', 'AddWindowsCapability-Global', 'OpenSSH.Server~~~~0.0.1.0')
-            $script:Seen['WinPEADKSE'] | Should -Be @('WinPEADKSE-Global')
-            $script:Seen['ContentPacks'] | Should -Be @('GlobalPack', 'Corp')
-            Should -Invoke Set-LanguageSettingsOS -Times 1 -Exactly
-            $script:Seen['Drivers'] | Should -Be @('Corp\Drivers', 'Global\Drivers', 'Family\Drivers')
-            $script:Seen['EnableNetFX3'] | Should -BeTrue
-            $script:Seen['WinPEDaRT'] | Should -Be 'DaRT10'
-            $script:Seen['SetUILang'] | Should -Be 'LangSetUILang-Global'
-        }
-
-        It 'ignores the templates with $SkipTemplates' {
-            $ByTaskName = 'Win11 Enterprise x64 24H2'; $SkipTemplates = [switch]$true
-            New-Item -Path $global:SetOSDBuilderPathTemplates -ItemType Directory -Force | Out-Null
-            Copy-Item -Path $script:FixtureTask -Destination (Join-Path $global:SetOSDBuilderPathTemplates 'OSBuild Global.json')
-            Mock Get-IsTemplatesEnabled {$true}
-            Mock Add-ContentDriversOS {$script:Seen['Drivers'] = @($Drivers)}
-            Invoke-UpdateOSMedia -Command 'New-OSBuild' -Parameters $BuildParameters | Out-Null
-            $script:Seen['Drivers'] | Should -Be @('Corp\Drivers')
-            Should -Invoke Get-OSTemplateDrivers -Times 0 -Exactly
-        }
-
-        It 'lists the template content when templates are enabled' {
-            $ByTaskName = 'Win11 Enterprise x64 24H2'
-            New-Item -Path $global:SetOSDBuilderPathTemplates -ItemType Directory -Force | Out-Null
-            Mock Get-IsTemplatesEnabled {$true}
-            foreach ($Template in 'Get-OSTemplateDrivers', 'Get-OSTemplateExtraFiles', 'Get-OSTemplateRegistryReg', 'Get-OSTemplateRegistryXml', 'Get-OSTemplateScripts') {
-                Mock -CommandName $Template -MockWith {[PSCustomObject]@{FullName = 'Templates\Global\Item'}}
-            }
-            Invoke-UpdateOSMedia -Command 'New-OSBuild' | Out-Null
-            foreach ($Template in 'Get-OSTemplateDrivers', 'Get-OSTemplateExtraFiles', 'Get-OSTemplateRegistryReg', 'Get-OSTemplateRegistryXml', 'Get-OSTemplateScripts') {
-                Should -Invoke -CommandName $Template -Times 1 -Exactly
-            }
-        }
-
-        It 'enables NetFX 3.5 with $EnableNetFX' {
-            $ByTaskName = 'Win11 Enterprise x64 24H2'; $EnableNetFX = [switch]$true
-            Mock Enable-NetFXOS {$script:Seen['EnableNetFX3'] = $EnableNetFX3}
-            Invoke-UpdateOSMedia -Command 'New-OSBuild' -Parameters $BuildParameters | Out-Null
-            $script:Seen['EnableNetFX3'] | Should -BeTrue
-        }
-
-        It 'applies the Optional updates and filters $IncludeKB and $ExcludeKB' {
-            $ByTaskName = 'Win11 Enterprise x64 24H2'
-            $IncludeKB = '5066835', '5067036', '890830', '5066699'; $ExcludeKB = '5066699'
-            Mock Update-OptionalOS {$script:Seen['Optional'] = @($OSDUpdateOptional.KBNumber); $script:Seen['SetupDU'] = @($OSDUpdateSetupDU | Where-Object {$_})}
-            $HostOutput = (New-OSBuild @BuildParameters 3>$null 6>&1) -join ' '
-            $HostOutput | Should -BeLike "*Save-OSDBuilderDownload -UpdateOS 'Windows 11' -UpdateBuild 24H2 -UpdateArch x64 -UpdateGroup Optional -Download*"
-            $script:Seen['Optional'] | Should -Be @('890830', '5067036')
-            $script:Seen['SetupDU'] | Should -BeNullOrEmpty
-            #New-OSBuild does not download Optional updates automatically, it shows the download command
-            Should -Invoke Get-OSDUpdateDownloads -Times 0 -Exactly
-        }
-
-        It 'creates a VHD and shows the info with $OSDVHD and $OSDInfo' {
-            $ByTaskName = 'Win11 Enterprise x64 24H2'; $OSDVHD = [switch]$true; $OSDInfo = [switch]$true
-            Invoke-UpdateOSMedia -Command 'New-OSBuild' -Parameters $BuildParameters | Out-Null
-            Should -Invoke New-OSDBuilderVHD -Times 1 -Exactly -ParameterFilter {$FullName -match 'OSBuilds.build\d{10}$'}
-            Should -Invoke Show-OSDBuilderInfo -Times 1 -Exactly -ParameterFilter {$FullName -match 'OSBuilds.build\d{10}$'}
-        }
-
-        It 'appends yyMMddhhmm when the OSBuild already exists' {
-            $ByTaskName = 'Win11 Enterprise x64 24H2'
-            New-Item -Path (Join-Path $global:SetOSDBuilderPathOSBuilds 'Win11 Ent 24H2 Corp 26100.6899') -ItemType Directory | Out-Null
-            $Warnings = Invoke-UpdateOSMedia -Command 'New-OSBuild' -Parameters $BuildParameters
-            $Warnings | Should -Contain 'Trying to rename the Build directory, but it already exists'
-            Get-RenamedOSMedia -Path $global:SetOSDBuilderPathOSBuilds | Where-Object {$_ -match '^Win11 Ent 24H2 Corp 26100\.6899 \d{10}$'} | Should -HaveCount 1
-        }
-    }
 }

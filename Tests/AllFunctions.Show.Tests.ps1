@@ -28,15 +28,6 @@ Describe 'Show-ActionTime' {
     }
 }
 
-Describe 'Show-GetWindowsImage' {
-    It 'writes the header and returns the Windows image' {
-        $GetWindowsImage = [PSCustomObject]@{ImageName = 'Windows 11 Enterprise'; ImageIndex = 3}
-        $Output = Show-GetWindowsImage 6>$null
-        $Output.ImageName | Should -Be 'Windows 11 Enterprise'
-        (Show-GetWindowsImage 6>&1) -join "`n" | Should -BeLike '*Windows Image Information*'
-    }
-}
-
 Describe 'Show-MediaImageInfoOS' {
     It 'shows the image information of the source OSMedia' {
         $OSMediaPath = 'C:\OSDBuilder\OSMedia\Windows 11 Enterprise x64 25H2 6899'; $OSImagePath = 'C:\OSMedia\OS\sources\install.wim'
@@ -52,46 +43,6 @@ Describe 'Show-MediaImageInfoOS' {
         $Output | Should -BeLike '*-Version:*10.0.26200.6899*'
         $Output | Should -BeLike '*-SPBuild:*6899*'
         $Output | Should -BeLike '*-Modified Time:*10/14/2026 11:00:00*'
-    }
-}
-
-Describe 'Show-MediaInfoOS' {
-    It 'shows the OSMedia paths' {
-        $OSMediaName = 'Windows 11 Enterprise x64 25H2 6899'; $OSMediaPath = 'C:\OSDBuilder\OSMedia\Windows 11 Enterprise x64 25H2 6899'
-        $OS = "$OSMediaPath\OS"; $WinPE = "$OSMediaPath\WinPE"; $Info = "$OSMediaPath\info"
-        $Output = (Show-MediaInfoOS 6>&1) -join "`n"
-        $Output | Should -BeLike '*OSMedia Information*'
-        $Output | Should -BeLike "*-OSMediaName:*$OSMediaName*"
-        $Output | Should -BeLike "*-WinPE:*$OSMediaPath\WinPE*"
-        $Output | Should -BeLike "*-Logs:*$OSMediaPath\info\logs*"
-    }
-}
-
-Describe 'Show-OSDBuilderHomeMap' {
-    BeforeEach {
-        $GetOSDBuilderHome = Join-Path $TestDrive 'OSDBuilder'
-        $SetOSDBuilderPathContentPacks = Join-Path $GetOSDBuilderHome 'ContentPacks'
-        Mock Get-IsContentPacksEnabled {$true}
-    }
-
-    It 'shows the existing home and ContentPacks directories' {
-        New-Item -Path $SetOSDBuilderPathContentPacks -ItemType Directory -Force | Out-Null
-        $Output = @(Show-OSDBuilderHomeMap 6>&1) | ForEach-Object {"$_"}
-        $Output | Should -Contain "OSDBuilder Home:                                    $GetOSDBuilderHome"
-        $Output | Should -Contain "ContentPacks:                                         $SetOSDBuilderPathContentPacks"
-    }
-
-    It 'marks directories that do not exist' {
-        $GetOSDBuilderHome = Join-Path $TestDrive 'Missing'
-        $SetOSDBuilderPathContentPacks = Join-Path $GetOSDBuilderHome 'ContentPacks'
-        $Output = (Show-OSDBuilderHomeMap 6>&1) -join "`n"
-        $Output | Should -BeLike "*$GetOSDBuilderHome (does not exist)*"
-        $Output | Should -BeLike "*$SetOSDBuilderPathContentPacks (does not exist)*"
-    }
-
-    It 'does not show ContentPacks when they are disabled' {
-        Mock Get-IsContentPacksEnabled {$false}
-        (Show-OSDBuilderHomeMap 6>&1) -join "`n" | Should -Not -BeLike '*ContentPacks*'
     }
 }
 
@@ -114,12 +65,6 @@ Describe 'Show-OSMediaInfo' {
         $Output | Should -BeLike "*-OSMedia Path OS:*$OSMediaPath\OS*"
         $Output | Should -BeLike "*-OSMedia Path WinPE:*$OSMediaPath\WinPE*"
         $Output | Should -BeLike "*-OSMedia Path Info:*$OSMediaPath\info*"
-    }
-}
-
-Describe 'Show-SkipUpdatesInfo' {
-    It 'writes nothing' {
-        @(Show-SkipUpdatesInfo 6>&1 3>&1) | Should -BeNullOrEmpty
     }
 }
 

@@ -140,7 +140,12 @@ The region is set with the regional format, system locale and keyboard
 * `-DefaultLanguage de-DE` sets `Set-AllIntl` (display language)
 * `-RegionalFormat de-AT` sets `Set-UserLocale`, `Set-SysLocale` and `Set-InputLocale` (default keyboard of de-AT: `0C07:00000407`, German keyboard),
   these settings take precedence over `Set-AllIntl`
+* The Language Features of the display language cover the region (Basic, OCR and Handwriting of de-de for de-AT),
+  the own Language Features of the region on the Languages and Optional Features ISO are added too (`TextToSpeech-de-at`),
+  see the [LP to FOD mapping table](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/features-on-demand-language-fod).
+  They require a display language of the same language in `-Languages` (de-DE for de-AT), otherwise the script warns and skips them
 * With `New-OSBuildTask` use `-SetAllIntl de-DE -SetUserLocale de-AT -SetSysLocale de-AT -SetInputLocale de-AT`
+  and add the Language Features of the region to `-LanguageFeature`
 * The example script stops with a hint when a region like `de-AT` is passed in `-Languages`
 
 ### Local Experience Packs (LXP)
@@ -258,3 +263,12 @@ Features on Demand are added with `Add-WindowsCapability` as recommended by Micr
   `Add-WindowsPackage` is only used when the capability cannot be added
 * Tasks with Features on Demand `.cab` files (`AddFeatureOnDemand`) still work, recreate the Task to switch to `AddWindowsCapability`
 * The LCU is reapplied once after Language and Feature on Demand content is added
+
+### Renaming OSMedia and repairing old Tasks
+
+* `Rename-OSMedia` lists the OSMedia whose directory name differs from the name `Import-OSMedia` and `Update-OSMedia` use
+  (`<ImageName> <Arch> <DisplayVersion> <UBR> <Languages>`, for example `Windows 11 Enterprise x64 25H2 26200.6584`)
+  and renames the OSMedia selected in Out-GridView, an existing OSMedia with the new name is not overwritten
+* `Repair-OSBuildTask` and `Repair-PEBuildTask` convert Tasks of OSDBuilder 19.1.3.0 and older to the current format,
+  `New-OSBuild` and `New-PEBuild` need Tasks of version 19.1.4.0 or newer. The OSMedia of every old Task is selected in Out-GridView,
+  the original Task is saved in `Tasks\Repair`

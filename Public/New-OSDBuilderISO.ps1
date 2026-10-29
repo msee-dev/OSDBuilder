@@ -172,8 +172,6 @@ function New-OSDBuilderISO {
             # 26 = Win10 Pro N x64 17134.112
             # 29 = Win10 Pro N Wks x64 17134.112
             $ISOLabel = '-l"{0}"' -f $OSImageName
-            $ISOFolder = "$($Media.FullName)\ISO"
-            if (!(Test-Path $ISOFolder)) {New-Item -Path $ISOFolder -ItemType Directory -Force | Out-Null}
 
             if (!(Test-Path $ISOSourceFolder)) {
                 Write-Warning "Could not locate $ISOSourceFolder"

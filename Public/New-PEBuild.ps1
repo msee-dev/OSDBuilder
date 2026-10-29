@@ -131,7 +131,7 @@ $MDTUnattendPEx86 = @'
 
             $WinPEOutput = $($Task.WinPEOutput)
             $CustomName = $($Task.CustomName)
-            if ((Get-IsContentPacksEnabled) -and (!($SkipContentPacks.IsPresent))) {
+            if (Get-IsContentPacksEnabled) {
                 if ($null -eq $Task.ContentPacks) {
                     $ContentPacks = @('_Global')
                 } else {
@@ -456,7 +456,6 @@ $MDTUnattendPEx86 = @'
                 Copy-Item -Path "$OSSourcePath\OS\efi\" -Destination "$OS\efi\" -Recurse -Force | Out-Null
                 Dism /Export-Image /SourceImageFile:"$OSSourcePath\WinPE\$SourceWim.wim" /SourceIndex:1 /DestinationImageFile:"$WorkingWim" /DestinationName:"$DestinationName" /Bootable /CheckIntegrity | Out-Null
                 #Copy-Item -Path "$OSSourcePath\WinPE\$SourceWim.wim" -Destination "$WorkingWim" -Force | Out-Null
-                if (!(Test-Path "$Sources")) {New-Item "$Sources" -ItemType Directory -Force | Out-Null}
                 
                 #=================================================
                 #   Mount-WindowsImage
@@ -828,13 +827,6 @@ $MDTUnattendPEx86 = @'
                     New-OSDBuilderISO -FullName "$WorkingPath"
                 }
                 
-                #=================================================
-                Write-Verbose '19.1.1 Show-OSDBuilderInfo'
-                #=================================================
-                if ($OSDInfo.IsPresent) {
-                    Write-Host '========================================================================================' -ForegroundColor DarkGray
-                    Show-OSDBuilderInfo -FullName $WorkingPath
-                }
 
                 #=================================================
                 Write-Verbose '19.1.1 Stop Transcript'

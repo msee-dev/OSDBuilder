@@ -498,12 +498,6 @@ function Add-ContentPack {
     #   BUILD
     #=================================================
     if ($ContentPacks) {
-        if ($ReleaseID -match '1909') {$MSUX = '1903'}
-        elseif ($ReleaseID -match '20H2') {$MSUX = '2004'}
-        elseif ($ReleaseID -match '21H1') {$MSUX = '2004'}
-        elseif ($ReleaseID -match '21H2') {$MSUX = '2004'}
-        elseif ($ReleaseID -match '22H2') {$MSUX = '2004'}
-        else {$MSUX = $ReleaseID}
         #=================================================
         #   MEDIA ContentPacks
         #=================================================
@@ -2607,19 +2601,15 @@ function Enable-WinREWiFi {
     #=================================================
     #   Execute
     #=================================================
+    #Get-IntelWirelessDriverPack of the OSD module returns the Intel Wireless drivers for Windows 10 and 11 newest first,
+    #it replaced Get-OSDCatalogIntelWirelessDriver in OSD 23.3.15.1 and supports only x64
+    $IntelWirelessDriverUrl = $null
     if ($OSArchitecture -eq 'x64') {
-        $OSDCatalogIntelWirelessDriver = Get-OSDCatalogIntelWirelessDriver | `
-            Where-Object {($_.OSVersion -match '10.0')} | `
-            Where-Object {($_.OSArch -match 'x64')} | `
-            Select-Object -First 1
-        $IntelWirelessDriverUrl = $OSDCatalogIntelWirelessDriver.DriverUrl
+        $IntelWirelessDriverUrl = (Get-IntelWirelessDriverPack -CompatArch 'x64' | Select-Object -First 1).DriverUrl
     }
-    else {
-        $OSDCatalogIntelWirelessDriver = Get-OSDCatalogIntelWirelessDriver | `
-            Where-Object {($_.OSVersion -match '10.0')} | `
-            Where-Object {($_.OSArch -match 'x86')} | `
-            Select-Object -First 1
-        $IntelWirelessDriverUrl = $OSDCatalogIntelWirelessDriver.DriverUrl
+    if (-not $IntelWirelessDriverUrl) {
+        Write-Warning "No Intel Wireless driver for $OSArchitecture in the OSD module, WinRE WiFi is not enabled"
+        Return
     }
 
     if (Test-WebConnection -Uri $IntelWirelessDriverUrl) {
@@ -2906,39 +2896,6 @@ function Export-PEWims {
     Write-Verbose "CurrentLog: $CurrentLog"
     Export-WindowsImage -SourceImagePath "$OSMediaPath\WimTemp\winse.wim" -SourceIndex 1 -DestinationImagePath "$OSMediaPath\WinPE\winse.wim" -LogPath "$CurrentLog" | Out-Null
 }
-function Export-SessionsXmlOS {
-    [CmdletBinding()]
-    param (
-        [string]$OSMediaPath
-    )
-    Write-Verbose "$OSMediaPath\Sessions.xml"
-    Copy-Item "$OSMediaPath\Sessions.xml" "$OSMediaPath\info\Sessions.xml" -Force | Out-Null
-
-    [xml]$SessionsXML = Get-Content -Path "$OSMediaPath\info\Sessions.xml"
-
-    $Sessions = $SessionsXML.SelectNodes('Sessions/Session') | ForEach-Object {
-        New-Object -Type PSObject -Property @{
-            Id = $_.Tasks.Phase.package.id
-            KBNumber = $_.Tasks.Phase.package.name
-            TargetState = $_.Tasks.Phase.package.targetState
-            Client = $_.Client
-            Complete = $_.Complete
-            Status = $_.Status
-        }
-    }
-    
-    $Sessions = $Sessions | Where-Object {$_.Id -like "Package*"}
-    $Sessions = $Sessions | Select-Object -Property Id, KBNumber, TargetState, Client, Status, Complete | Sort-Object Complete -Descending
-
-    $Sessions | Out-File "$OSMediaPath\Sessions.txt"
-    $Sessions | Out-File "$OSMediaPath\info\logs\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-Sessions.txt"
-    $Sessions | Export-Clixml -Path "$OSMediaPath\info\xml\Sessions.xml"
-    $Sessions | Export-Clixml -Path "$OSMediaPath\info\xml\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-Sessions.xml"
-    $Sessions | ConvertTo-Json | Out-File "$OSMediaPath\info\json\Sessions.json"
-    $Sessions | ConvertTo-Json | Out-File "$OSMediaPath\info\json\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-Sessions.json"
-
-    Remove-Item "$OSMediaPath\Sessions.xml" -Force | Out-Null
-}
 function Get-FeatureUpdateDownloads {
     $FeatureUpdateDownloads = @()
     #$FeatureUpdateDownloads = Get-WSUSXML -Catalog FeatureUpdate
@@ -2948,7 +2905,7 @@ function Get-FeatureUpdateDownloads {
     Language, Activation, Build, `
     @{Name = 'UpdateOS'; Expression = { $_.Version } }, `
     @{Name = 'UpdateBuild'; Expression = { $_.ReleaseID } }, `
-    @{Name = 'UpdateArch'; Expression = { $_.Architecture } }, `
+    @{Name = 'UpdateArch'; Expression = { if ($_.Architecture -eq 'amd64') {'x64'} else {$_.Architecture} } }, `
     @{Name = 'CreationDate'; Expression = { $_.ReleaseDate } }, `
     FileName, `
     @{Name = 'OriginUri'; Expression = { $_.Url } }, `
@@ -3096,57 +3053,6 @@ function Get-OSBuildTask {
         #Write-Host '========================================================================================' -ForegroundColor DarkGray
         #Write-Host "$($MyInvocation.MyCommand.Name) END"
     }
-}
-function Get-OSDFromJson
-{
-    param(
-        [Parameter(Mandatory=$true, Position=1)]
-        [string]$Path
-    )
-
-    function Get-Value {
-        param( $value )
-
-        $result = $null
-        if ( $value -is [System.Management.Automation.PSCustomObject] )
-        {
-            Write-Verbose "Get-Value: value is PSCustomObject"
-            $result = @{}
-            $value.psobject.properties | ForEach-Object { 
-                if ($_.Value -is [System.Object[]]) {$result[$_.Name] = @(Get-Value -value $_.Value)}
-                else {$result[$_.Name] = Get-Value -value $_.Value}
-            }
-        }
-        elseif ($value -is [System.Object[]])
-        {
-            $list = New-Object System.Collections.ArrayList
-            Write-Verbose "Get-Value: value is Array"
-            $value | ForEach-Object {
-                $list.Add((Get-Value -value $_)) | Out-Null
-            }
-            $result = $list
-        }
-        else
-        {
-            if ($null -ne $value) {Write-Verbose "Get-Value: value is type: $($value.GetType())"}
-            $result = $value
-        }
-        return $result
-    }
-
-
-    if (Test-Path $Path)
-    {
-        $json = Get-Content $Path -Raw
-    }
-    else
-    {
-        $json = '{}'
-    }
-
-    $hashtable = Get-Value -value (ConvertFrom-Json $json)
-
-    return $hashtable
 }
 function Get-OSDUpdateDownloads {
     [CmdletBinding()]
@@ -4536,35 +4442,6 @@ function Get-TaskWinPEScriptsSE {
     foreach ($Item in $WinPEScriptsSE) {Write-Host "$($Item.FullName)" -ForegroundColor White}
     Return $WinPEScriptsSE
 }
-function Get-Value {
-        param( $value )
-
-        $result = $null
-        if ( $value -is [System.Management.Automation.PSCustomObject] )
-        {
-            Write-Verbose "Get-Value: value is PSCustomObject"
-            $result = @{}
-            $value.psobject.properties | ForEach-Object { 
-                if ($_.Value -is [System.Object[]]) {$result[$_.Name] = @(Get-Value -value $_.Value)}
-                else {$result[$_.Name] = Get-Value -value $_.Value}
-            }
-        }
-        elseif ($value -is [System.Object[]])
-        {
-            $list = New-Object System.Collections.ArrayList
-            Write-Verbose "Get-Value: value is Array"
-            $value | ForEach-Object {
-                $list.Add((Get-Value -value $_)) | Out-Null
-            }
-            $result = $list
-        }
-        else
-        {
-            if ($null -ne $value) {Write-Verbose "Get-Value: value is type: $($value.GetType())"}
-            $result = $value
-        }
-        return $result
-    }
 function Import-AutoExtraFilesPE {
     [CmdletBinding()]
     param ()
@@ -5201,459 +5078,6 @@ function Remove-WindowsPackageOS {
         }
     }
 }
-function Rename-OSMedia {
-    [CmdletBinding()]
-    param ()
-
-    Begin {
-        #=================================================
-        #   Header
-        #=================================================
-        #   Write-Host '========================================================================================' -ForegroundColor DarkGray
-        #   Write-Host -ForegroundColor Green "$($MyInvocation.MyCommand.Name) BEGIN"
-        #=================================================
-        #   Get-OSDBuilder
-        #=================================================
-        Get-OSDBuilder -CreatePaths -HideDetails
-        #=================================================
-        Write-Verbose '19.1.1 Gather All OSMedia'
-        #=================================================
-        $AllOSMedia = @()
-        $AllOSMedia = Get-ChildItem -Path "$SetOSDBuilderPathOSMedia" -Directory | Select-Object -Property * | Where-Object {Test-Path $(Join-Path $_.FullName "info\xml\Get-WindowsImage.xml")}
-    }
-
-    Process {
-        #Write-Host '========================================================================================' -ForegroundColor DarkGray
-        #Write-Host "$($MyInvocation.MyCommand.Name) PROCESS"
-
-        $RenameOSMedia = foreach ($Item in $AllOSMedia) {
-            #=================================================
-            #Write-Verbose '19.1.1 Get Windows Image Information'
-            #=================================================
-            $RenameOSMediaPath = $($Item.FullName)
-            Write-Verbose "OSMedia Full Path: $RenameOSMediaPath"
-            
-            $OSMWindowsImage = @()
-            $OSMWindowsImage = Import-Clixml -Path "$RenameOSMediaPath\info\xml\Get-WindowsImage.xml"
-            
-            $OSMVersion = $($OSMWindowsImage.Version)
-            Write-Verbose "Version: $OSMVersion"
-
-            $OSMImageName = $($OSMWindowsImage.ImageName)
-            Write-Verbose "ImageName: $OSMImageName"
-
-            $OSMArch = $OSMWindowsImage.Architecture
-            if ($OSMArch -eq '0') {$OSMArch = 'x86'}
-            if ($OSMArch -eq '6') {$OSMArch = 'ia64'}
-            if ($OSMArch -eq '9') {$OSMArch = 'x64'}
-            if ($OSMArch -eq '12') {$OSMArch = 'x64 ARM'}
-            Write-Verbose "Arch: $OSMArch"
-
-            $OSMEditionId = $($OSMWindowsImage.EditionId)
-            Write-Verbose "EditionId: $OSMEditionId"
-
-            $OSMInstallationType = $($OSMWindowsImage.InstallationType)
-            Write-Verbose "InstallationType: $OSMInstallationType"
-
-            $OSMMajorVersion = $($OSMWindowsImage.MajorVersion)
-            Write-Verbose "MajorVersion: $OSMMajorVersion"
-
-            $OSMMinorVersion = $($OSMWindowsImage.MinorVersion)
-            Write-Verbose "MinorVersion: $OSMMinorVersion"
-
-            $OSMBuild = $OSMWindowsImage.Build
-            Write-Verbose "Build: $OSMBuild"
-
-            $OSMLanguages = $($OSMWindowsImage.Languages)
-            Write-Verbose "Languages: $OSMLanguages"
-
-            $OperatingSystem = ''
-            if ($OSMMajorVersion -eq 6 -and $OSMInstallationType -eq 'Client') {$OperatingSystem = 'Windows 7'}
-            if ($OSMMajorVersion -eq 10 -and $OSMInstallationType -eq 'Client') {
-                if ($OSMImageName -match ' 11 ') {
-                    $OperatingSystem = 'Windows 11'
-                }
-                else {
-                    $OperatingSystem = 'Windows 10'
-                }
-            }
-            if ($OSMMajorVersion -eq 10 -and $OSMInstallationType -eq 'Server' -and $OSMImageName -match '2016') {$OperatingSystem = 'Server 2016'}
-            if ($OSMMajorVersion -eq 10 -and $OSMInstallationType -eq 'Server' -and $OSMImageName -match '2019') {$OperatingSystem = 'Server 2019'}
-            if ($OSMMajorVersion -eq 10 -and $OSMInstallationType -eq 'Server' -and $OSMImageName -match '2022') {$OperatingSystem = 'Server 2022'}
-
-            $OSMUBR = $($OSMWindowsImage.UBR)
-            Write-Verbose "UBR: $OSMUBR"
-			
-            #   OSMFamily V1
-            $OSMFamilyV1 = $(Get-Date -Date $($OSMWindowsImage.CreatedTime)).ToString("yyyyMMddHHmmss") + $OSMEditionID
-            #   OSMFamily V2
-            $OSMFamily = $OSMInstallationType + " " + $OSMEditionId + " " + $OSMArch + " " + [string]$OSMBuild + " " + $OSMLanguages
-            Write-Verbose "OSMFamily: $OSMFamily"
-
-            #$OSMWindowsImage | ForEach {$_.PSObject.Properties.Remove('Guid')}
-
-            $OSMGuid = $($OSMWindowsImage.OSMGuid)
-            if (-not ($OSMGuid)) {
-                $OSMGuid = $(New-Guid)
-                $OSMWindowsImage | Add-Member -Type NoteProperty -Name "OSMGuid" -Value $OSMGuid
-                $OSMWindowsImage | Out-File "$RenameOSMediaPath\WindowsImage.txt"
-                $OSMWindowsImage | Out-File "$RenameOSMediaPath\info\logs\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-Get-WindowsImage.txt"
-                $OSMWindowsImage | Export-Clixml -Path "$RenameOSMediaPath\info\xml\Get-WindowsImage.xml"
-                $OSMWindowsImage | Export-Clixml -Path "$RenameOSMediaPath\info\xml\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-Get-WindowsImage.xml"
-                $OSMWindowsImage | ConvertTo-Json | Out-File "$RenameOSMediaPath\info\json\Get-WindowsImage.json"
-                $OSMWindowsImage | ConvertTo-Json | Out-File "$RenameOSMediaPath\info\json\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-Get-WindowsImage.json"
-                (Get-Content "$RenameOSMediaPath\WindowsImage.txt") | Where-Object {$_.Trim(" `t")} | Set-Content "$RenameOSMediaPath\WindowsImage.txt"
-                Write-Verbose "Guid (New): $OSMGuid"
-            } else {
-                Write-Verbose "Guid: $OSMGuid"
-            }
-
-            #=================================================
-            #Write-Verbose '19.1.1 Gather Registry Information'
-            #=================================================
-            $OSMRegistry = @()
-            if (Test-Path "$RenameOSMediaPath\info\xml\CurrentVersion.xml") {
-                Write-Verbose "Registry: $RenameOSMediaPath\info\xml\CurrentVersion.xml"
-                $OSMRegistry = Import-Clixml -Path "$RenameOSMediaPath\info\xml\CurrentVersion.xml"
-            } else {
-                Write-Verbose "Registry: $RenameOSMediaPath\info\xml\CurrentVersion.xml (Not Found)"
-            }
-            [string]$OSMReleaseId = $($OSMRegistry.ReleaseId)
-
-            if ($OSMBuild -eq 7600) {$OSMReleaseId = 7600}
-            if ($OSMBuild -eq 7601) {$OSMReleaseId = 7601}
-            if ($OSMBuild -eq 9600) {$OSMReleaseId = 9600}
-            if ($OSMBuild -eq 10240) {$OSMReleaseId = 1507}
-            if ($OSMBuild -eq 14393) {$OSMReleaseId = 1607}
-            if ($OSMBuild -eq 15063) {$OSMReleaseId = 1703}
-            if ($OSMBuild -eq 16299) {$OSMReleaseId = 1709}
-            if ($OSMBuild -eq 17134) {$OSMReleaseId = 1803}
-            if ($OSMBuild -eq 17763) {$OSMReleaseId = 1809}
-            #if ($OSMBuild -eq 18362) {$OSMReleaseId = 1903}
-            #if ($OSMBuild -eq 18363) {$OSMReleaseId = 1909}
-            #if ($OSMBuild -eq 19041) {$OSMReleaseId = 2004}
-            #if ($OSMBuild -eq 19042) {$OSMReleaseId = '20H2'}
-            #if ($OSMBuild -eq 19043) {$OSMReleaseId = '21H1'}
-            #if ($OSMBuild -eq 19044) {$OSMReleaseId = '21H2'}
-
-            Write-Verbose "ReleaseId: $OSMReleaseId"
-
-            if ($OSMReleaseId -eq 7601) {$OSMReleaseId = 'SP1'}
-
-            $FullNameFormat = "$OSMImageName $OSMArch $OSMReleaseId $OSMUBR $($OSMWindowsImage.Languages)"
-
-            $FullNameFormat = $FullNameFormat -replace '\(', ''
-            $FullNameFormat = $FullNameFormat -replace '\)', ''
-
-            if ($($($OSMWindowsImage.Languages).count) -eq 1) {$FullNameFormat = $FullNameFormat.replace(' en-US','')}
-
-            if (!($Item.Name -eq $FullNameFormat)) {
-                #=================================================
-                #Write-Verbose '19.1.1 Object Properties'
-                #=================================================
-                $ObjectProperties = @{
-                    
-                    FullNameFormat      = $FullNameFormat
-                    Name                = $Item.Name
-                    FullName            = $Item.FullName
-                }
-                New-Object -TypeName PSObject -Property $ObjectProperties
-                Write-Verbose ""
-            }
-
-        }
-
-        #=================================================
-        #Write-Verbose '19.1.3 Output'
-        #=================================================
-        $RenameOSMedia = $RenameOSMedia | Select-Object FullNameFormat,Name,FullName | Out-GridView -PassThru -Title 'Rename-OSMedia: Select one or more OSMedia to Rename and press OK'
-        foreach ($Item in $RenameOSMedia){
-            Write-Warning "Renaming $($Item.FullName) to $($Item.FullNameFormat)"
-            Rename-Item -Path "$($Item.FullName)" -NewName "$($Item.FullNameFormat)" -Force
-        }
-    }
-
-    End {
-        #Write-Host '========================================================================================' -ForegroundColor DarkGray
-        #Write-Host "$($MyInvocation.MyCommand.Name) END"
-    }
-}
-function Repair-OSBuildTask {
-    [CmdletBinding()]
-    param ()
-    Begin {
-        #=================================================
-        #   Header
-        #=================================================
-        #   Write-Host '========================================================================================' -ForegroundColor DarkGray
-        #   Write-Host -ForegroundColor Green "$($MyInvocation.MyCommand.Name) BEGIN"
-        #=================================================
-        #   Get-OSDBuilder
-        #=================================================
-        Get-OSDBuilder -CreatePaths -HideDetails
-        #=================================================
-        Write-Verbose '19.1.6 Gather All OSBuildTask'
-        #=================================================
-        $OSBuildTask = @()
-        $OSBuildTask = Get-OSBuildTask | Where-Object {$null -eq $_.OSMGuid}
-    }
-    
-    Process {
-        #Write-Host '========================================================================================' -ForegroundColor DarkGray
-        Write-Host "$($MyInvocation.MyCommand.Name) PROCESS"
-
-        foreach ($Item in $OSBuildTask) {
-            $TaskFile = Get-Item -Path "$($Item.FullName)" | Select-Object -Property *
-            Write-Warning "Repair Required: $($Item.FullName)"
-
-            #=================================================
-            Write-Verbose 'Read Task'
-            #=================================================
-            $Task = @()
-            $Task = Get-Content "$($Item.FullName)" | ConvertFrom-Json
-
-            if ([System.Version]$Task.TaskVersion -gt [System.Version]"19.1.3.0") {
-                Write-Warning "Error: OSBuild Task does not need a Repair . . . Exiting!"
-                Return
-            }
-    
-            Write-Host "Select the OSMedia that will be used with this OSBuild Task"
-            Write-Host "Previous OSMedia: $($Task.MediaName)"
-            $OSMedia = Get-OSMedia
-
-            if ($Task.MediaName -like "*x64*") {$OSMedia = $OSMedia | Where-Object {$_.Arch -eq 'x64'}}
-            if ($Task.MediaName -like "*x86*") {$OSMedia = $OSMedia | Where-Object {$_.Arch -eq 'x86'}}
-            if ($Task.MediaName -like "*1511*") {$OSMedia = $OSMedia | Where-Object {$_.ReleaseId -eq '1511'}}
-            if ($Task.MediaName -like "*1607*") {$OSMedia = $OSMedia | Where-Object {$_.ReleaseId -eq '1607'}}
-            if ($Task.MediaName -like "*1703*") {$OSMedia = $OSMedia | Where-Object {$_.ReleaseId -eq '1703'}}
-            if ($Task.MediaName -like "*1709*") {$OSMedia = $OSMedia | Where-Object {$_.ReleaseId -eq '1709'}}
-            if ($Task.MediaName -like "*1803*") {$OSMedia = $OSMedia | Where-Object {$_.ReleaseId -eq '1803'}}
-            if ($Task.MediaName -like "*1809*") {$OSMedia = $OSMedia | Where-Object {$_.ReleaseId -eq '1809'}}
-            
-            $OSMedia = $OSMedia | Out-GridView -OutputMode Single -Title "$($Task.TaskName): Select the OSMedia used with this OSBuild Task"
-    
-            if ($null -eq $OSMedia) {
-                Write-Warning "Error: OSMedia was not selected . . . Exiting!"
-                Return
-            }
-
-            Write-Host "Selected $($OSMedia.Name)"
-
-            #=================================================
-            Write-Verbose '19.1.5 Create OSBuild Task'
-            #=================================================
-            $NewTask = [ordered]@{
-                "TaskType" = [string]"OSBuild";
-                "TaskName" = [string]$Task.TaskName;
-                "TaskVersion" = [string]$global:GetOSDBuilder.VersionOSDBuilder;
-                "TaskGuid" = [string]$(New-Guid);
-                "CustomName" = [string]$Task.BuildName;
-    
-                "OSMFamily" = [string]$OSMedia.OSMFamily;
-                "OSMGuid" = [string]$OSMedia.OSMGuid;
-                "Name" = [string]$OSMedia.Name;
-                "ImageName" = [string]$OSMedia.ImageName;
-                "Arch" = [string]$OSMedia.Arch;
-                "ReleaseId" = [string]$($OSMedia.ReleaseId);
-                "UBR" = [string]$OSMedia.UBR;
-                "EditionId" = [string]$OSMedia.EditionId;
-                "InstallationType" = [string]$OSMedia.InstallationType;
-                "MajorVersion" = [string]$OSMedia.MajorVersion;
-                "Build" = [string]$OSMedia.Build;
-                "CreatedTime" = [datetime]$OSMedia.CreatedTime;
-                "ModifiedTime" = [datetime]$OSMedia.ModifiedTime;
-    
-                "EnableNetFX3" = [string]$Task.EnableNetFX3;
-                "StartLayoutXML" = [string]$Task.ImportStartLayout;
-                "UnattendXML" = [string]$Task.UseWindowsUnattend;
-                "WinPEAutoExtraFiles" = [string]"False";
-                "WinPEDaRT" = [string]$Task.WinPEAddDaRT;
-
-                "ExtraFiles" = [string[]]$Task.RobocopyExtraFiles;
-                "Scripts" = [string[]]$Task.InvokeScript;
-                "Drivers" = [string[]]$Task.AddWindowsDriver;
-    
-                "AddWindowsPackage" = [string[]]$Task.AddWindowsPackage;
-                "RemoveWindowsPackage" = [string[]]$Task.RemoveWindowsPackage;
-                "AddFeatureOnDemand" = [string[]]$Task.AddFeatureOnDemand;
-                "EnableWindowsOptionalFeature" = [string[]]$Task.EnableWindowsOptionalFeature;
-                "DisableWindowsOptionalFeature" = [string[]]$Task.DisableWindowsOptionalFeature;
-                "RemoveAppxProvisionedPackage" = [string[]]$Task.RemoveAppxProvisionedPackage;
-                "RemoveWindowsCapability" = [string[]]$Task.RemoveWindowsCapability;
-    
-                "WinPEDrivers" = [string[]]$Task.WinPEAddWindowsDriver;
-                "WinPEScriptsPE" = [string[]]$Task.WinPEInvokeScriptPE;
-                "WinPEScriptsRE" = [string[]]$Task.WinPEInvokeScriptRE;
-                "WinPEScriptsSE" = [string[]]$Task.WinPEInvokeScriptSetup;
-                "WinPEExtraFilesPE" = [string[]]$Task.WinPERobocopyExtraFilesPE;
-                "WinPEExtraFilesRE" = [string[]]$Task.WinPERobocopyExtraFilesRE;
-                "WinPEExtraFilesSE" = [string[]]$Task.WinPERobocopyExtraFilesSetup;
-                "WinPEADKPE" = [string[]]$Task.WinPEAddADKPE;
-                "WinPEADKRE" = [string[]]$Task.WinPEAddADKRE;
-                "WinPEADKSE" = [string[]]$Task.WinPEAddADKSetup;
-    
-                "LangSetAllIntl" = [string]$Task.LangSetAllIntl;
-                "LangSetInputLocale" = [string]$Task.LangSetInputLocale;
-                "LangSetSKUIntlDefaults" = [string]$Task.LangSetSKUIntlDefaults;
-                "LangSetSetupUILang" = [string]$Task.LangSetSetupUILang;
-                "LangSetSysLocale" = [string]$Task.LangSetSysLocale;
-                "LangSetUILang" = [string]$Task.LangSetUILang;
-                "LangSetUILangFallback" = [string]$Task.LangSetUILangFallback;
-                "LangSetUserLocale" = [string]$Task.LangSetUserLocale;
-                "LanguageFeature" = [string[]]$Task.AddLanguageFeature;
-                "LanguageInterfacePack" = [string[]]$Task.AddLanguageInterfacePack;
-                "LanguagePack" = [string[]]$Task.AddLanguagePack;
-            }
-			
-            #=================================================
-            Write-Verbose '19.1.7 Create Backup'
-            #=================================================
-            if (!(Test-Path "$($TaskFile.Directory)\Repair")) {
-                New-Item -Path "$($TaskFile.Directory)\Repair"-ItemType Directory -Force | Out-Null
-            }
-
-            if (!(Test-Path "$($TaskFile.Directory)\Repair\$($TaskFile.Name)")) {
-                Write-Host "Creating Backup $($TaskFile.Directory)\Repair\$($TaskFile.Name)"
-                Copy-Item -Path "$($TaskFile.FullName)" -Destination "$($TaskFile.Directory)\Repair\$($TaskFile.Name)" -Force
-            }
-    
-            #=================================================
-            Write-Verbose '19.1.1 New-OSBuildTask Complete'
-            #=================================================
-            $NewTask | ConvertTo-Json | Out-File "$($Item.FullName)" -Encoding ascii
-            Write-Host "Update Complete: $($Task.TaskName)"
-            Write-Host '========================================================================================' -ForegroundColor DarkGray
-        }
-    }
-
-    End {
-        #Write-Host '========================================================================================' -ForegroundColor DarkGray
-        #Write-Host "$($MyInvocation.MyCommand.Name) END"
-    }
-}
-function Repair-PEBuildTask {
-    [CmdletBinding()]
-    param ()
-    Begin {
-        #=================================================
-        #   Header
-        #=================================================
-        #   Write-Host '========================================================================================' -ForegroundColor DarkGray
-        #   Write-Host -ForegroundColor Green "$($MyInvocation.MyCommand.Name) BEGIN"
-        #=================================================
-        #   Get-OSDBuilder
-        #=================================================
-        Get-OSDBuilder -CreatePaths -HideDetails
-        #=================================================
-        Write-Verbose '19.1.6 Gather All PEBuildTask'
-        #=================================================
-        $PEBuildTask = @()
-        $PEBuildTask = Get-PEBuildTask | Where-Object {$null -eq $_.OSMGuid}
-    }
-    
-    Process {
-        #Write-Host '========================================================================================' -ForegroundColor DarkGray
-        Write-Host "$($MyInvocation.MyCommand.Name) PROCESS"
-
-        foreach ($Item in $PEBuildTask) {
-            $TaskFile = Get-Item -Path "$($Item.FullName)" | Select-Object -Property *
-            Write-Warning "Repair Required: $($Item.FullName)"
-
-            #=================================================
-            Write-Verbose 'Read Task'
-            #=================================================
-            $Task = @()
-            $Task = Get-Content "$($Item.FullName)" | ConvertFrom-Json
-
-            if ([System.Version]$Task.TaskVersion -gt [System.Version]"19.1.3.0") {
-                Write-Warning "Error: PEBuild Task does not need a Repair . . . Exiting!"
-                Return
-            }
-    
-            Write-Host "Select the OSMedia that will be used with this PEBuild Task"
-            Write-Host "Previous OSMedia: $($Task.MediaName)"
-            $OSMedia = Get-OSMedia
-            
-            if ($Task.MediaName -like "*x64*") {$OSMedia = $OSMedia | Where-Object {$_.Arch -eq 'x64'}}
-            if ($Task.MediaName -like "*x86*") {$OSMedia = $OSMedia | Where-Object {$_.Arch -eq 'x86'}}
-            if ($Task.MediaName -like "*1511*") {$OSMedia = $OSMedia | Where-Object {$_.ReleaseId -eq '1511'}}
-            if ($Task.MediaName -like "*1607*") {$OSMedia = $OSMedia | Where-Object {$_.ReleaseId -eq '1607'}}
-            if ($Task.MediaName -like "*1703*") {$OSMedia = $OSMedia | Where-Object {$_.ReleaseId -eq '1703'}}
-            if ($Task.MediaName -like "*1709*") {$OSMedia = $OSMedia | Where-Object {$_.ReleaseId -eq '1709'}}
-            if ($Task.MediaName -like "*1803*") {$OSMedia = $OSMedia | Where-Object {$_.ReleaseId -eq '1803'}}
-            if ($Task.MediaName -like "*1809*") {$OSMedia = $OSMedia | Where-Object {$_.ReleaseId -eq '1809'}}
-
-            $OSMedia = $OSMedia | Out-GridView -OutputMode Single -Title "$($Task.TaskName): Select the OSMedia used with this PEBuild Task"
-    
-            if ($null -eq $OSMedia) {
-                Write-Warning "Error: OSMedia was not selected . . . Exiting!"
-                Return
-            }
-
-            Write-Host "Selected $($OSMedia.Name)"
-
-            #=================================================
-            Write-Verbose '19.1.5 Create PEBuild Task'
-            #=================================================
-            $NewTask = [ordered]@{
-                "TaskType" = 'PEBuild'
-                "TaskName" = [string]$Task.TaskName;
-                "TaskVersion" = [string]$global:GetOSDBuilder.VersionOSDBuilder;
-                "TaskGuid" = [string]$(New-Guid);
-    
-                "OSMFamily" = [string]$OSMedia.OSMFamily;
-                "OSMGuid" = [string]$OSMedia.OSMGuid;
-                "Name" = [string]$OSMedia.Name;
-                "ImageName" = [string]$OSMedia.ImageName;
-                "Arch" = [string]$OSMedia.Arch;
-                "ReleaseId" = [string]$($OSMedia.ReleaseId);
-                "UBR" = [string]$OSMedia.UBR;
-                "EditionId" = [string]$OSMedia.EditionId;
-                "InstallationType" = [string]$OSMedia.InstallationType;
-                "MajorVersion" = [string]$OSMedia.MajorVersion;
-                "Build" = [string]$OSMedia.Build;
-                "CreatedTime" = [datetime]$OSMedia.CreatedTime;
-                "ModifiedTime" = [datetime]$OSMedia.ModifiedTime;
-
-                "WinPEOutput" = [string]$Task.PEOutput;
-                "CustomName" = [string]'';
-                "MDTDeploymentShare" = [string]$Task.DeploymentShare;
-                "ScratchSpace" = [string]$Task.ScratchSpace;
-                "SourceWim" = [string]$Task.SourceWim;
-                "WinPEAutoExtraFiles" = [string]$Task.AutoExtraFiles;
-                "WinPEDaRT" = [string]$Task.WinPEAddDaRT;
-                "WinPEDrivers" = [string[]]$Task.WinPEAddWindowsDriver;
-                "WinPEExtraFiles" = [string[]]$Task.WinPERobocopyExtraFiles;
-                "WinPEScripts" = [string[]]$Task.WinPEInvokeScript;
-                "WinPEADK" = [string[]]$Task.WinPEAddADK;
-            }
-    
-            #=================================================
-            Write-Verbose '19.1.7 Create Backup'
-            #=================================================
-            if (!(Test-Path "$($TaskFile.Directory)\Repair")) {
-                New-Item -Path "$($TaskFile.Directory)\Repair"-ItemType Directory -Force | Out-Null
-            }
-
-            if (!(Test-Path "$($TaskFile.Directory)\Repair\$($TaskFile.Name)")) {
-                Write-Host "Creating Backup $($TaskFile.Directory)\Repair\$($TaskFile.Name)"
-                Copy-Item -Path "$($TaskFile.FullName)" -Destination "$($TaskFile.Directory)\Repair\$($TaskFile.Name)" -Force
-            }
-            
-            #=================================================
-            Write-Verbose '19.1.7 New-PEBuildTask Complete'
-            #=================================================
-            $NewTask | ConvertTo-Json | Out-File "$($Item.FullName)" -Encoding ascii
-            Write-Host "Update Complete: $($Task.TaskName)"
-            Write-Host '========================================================================================' -ForegroundColor DarkGray
-        }
-    }
-
-    End {
-        #Write-Host '========================================================================================' -ForegroundColor DarkGray
-        #Write-Host "$($MyInvocation.MyCommand.Name) END"
-    }
-}
 function Save-AutoExtraFilesOS {
     [CmdletBinding()]
     param (
@@ -6206,32 +5630,6 @@ function Show-ActionTime {
     #Write-Host -ForegroundColor DarkGray "[$(($Global:OSDStartTime).ToString('yyyy-MM-dd-HHmmss'))] " -NoNewline
     #=================================================
 }
-function Show-GetWindowsImage {
-    [CmdletBinding()]
-    param ()
-    Write-Host '========================================================================================' -ForegroundColor DarkGray
-    Write-Host -ForegroundColor Green "Windows Image Information"
-    $GetWindowsImage
-<#     Write-Host " Source Path:                $OSSourcePath"
-    Write-Host "-Image File:                $OSImagePath"
-    Write-Host "-Image Index:               $OSImageIndex"
-    Write-Host "-Name:                      $OSImageName"
-    Write-Host "-Description:               $OSImageDescription"
-    Write-Host "-Architecture:              $($GetWindowsImage.Architecture)"
-    Write-Host "-Edition:                   $($GetWindowsImage.EditionID)"
-    Write-Host "-Type:                      $OSInstallationType"
-    Write-Host "-Languages:                 $OSLanguages"
-    Write-Host "-Build:                     $OSBuild"
-    Write-Host "-Version:                   $OSVersion"
-    Write-Host "-SPBuild:                   $OSSPBuild"
-    Write-Host "-SPLevel:                   $OSSPLevel"
-    Write-Host "-Bootable:                  $OSImageBootable"
-    Write-Host "-WimBoot:                   $OSWIMBoot"
-    Write-Host "-Created Time:              $OSCreatedTime"
-    Write-Host "-Modified Time:             $OSModifiedTime" #>
-    #Write-Host "UBR                  : $UBR"
-    #Write-Host "OSMGuid              : $OSMGuid"
-}
 function Show-MediaImageInfoOS {
     [CmdletBinding()]
     param ()
@@ -6258,46 +5656,6 @@ function Show-MediaImageInfoOS {
     #Write-Host "-WimBoot:                  $OSWIMBoot"
     Write-Host "-Created Time:              $OSCreatedTime"
     Write-Host "-Modified Time:             $OSModifiedTime"
-}
-function Show-MediaInfoOS {
-    [CmdletBinding()]
-    param ()
-    Write-Host '========================================================================================' -ForegroundColor DarkGray
-    Write-Host -ForegroundColor Green "OSMedia Information"
-    Write-Host "-OSMediaName:       $OSMediaName" -ForegroundColor Yellow
-    Write-Host "-OSMediaPath:       $OSMediaPath" -ForegroundColor Yellow
-    Write-Host "-OS:                $OS"
-    Write-Host "-WinPE:             $WinPE"
-    Write-Host "-Info:              $Info"
-    Write-Host "-Logs:              $Info\logs"
-}
-function Show-OSDBuilderHomeMap {
-    [CmdletBinding()]
-    param ()
-    Write-Host ""
-    
-    if (Test-Path $GetOSDBuilderHome)            {Write-Host "OSDBuilder Home:                                    $GetOSDBuilderHome" -ForegroundColor White}
-    else                                        {Write-Host "OSDBuilder Home:                                    $GetOSDBuilderHome (does not exist)" -ForegroundColor White}
-    if (Get-IsContentPacksEnabled) {
-        if (Test-Path $SetOSDBuilderPathContentPacks)  {Write-Host "ContentPacks:                                         $SetOSDBuilderPathContentPacks" -ForegroundColor Cyan}
-        else                                    {Write-Host "ContentPacks:                                         $SetOSDBuilderPathContentPacks (does not exist)" -ForegroundColor Gray}
-    }
-
-<#     if (Test-Path "$SetOSDBuilderPathOSImport")            {Write-Host "OSImport:          $SetOSDBuilderPathOSImport" -ForegroundColor Gray}
-        else                                        {Write-Host "OSImport:          $SetOSDBuilderPathOSImport (does not exist)" -ForegroundColor Gray}
-    if (Test-Path "$SetOSDBuilderPathOSMedia")             {Write-Host "OSMedia:           $SetOSDBuilderPathOSMedia" -ForegroundColor Gray}
-        else                                        {Write-Host "OSMedia:           $SetOSDBuilderPathOSMedia (does not exist)" -ForegroundColor Gray}
-    if (Test-Path "$SetOSDBuilderPathOSBuilds")            {Write-Host "OSBuilds:          $SetOSDBuilderPathOSBuilds" -ForegroundColor Gray}
-        else                                        {Write-Host "OSBuilds:          $SetOSDBuilderPathOSBuilds (does not exist)" -ForegroundColor Gray}
-    if (Test-Path "$SetOSDBuilderPathPEBuilds")            {Write-Host "PEBuilds:          $SetOSDBuilderPathPEBuilds" -ForegroundColor Gray}
-        else                                        {Write-Host "PEBuilds:          $SetOSDBuilderPathPEBuilds (does not exist)" -ForegroundColor Gray}
-    if (Test-Path $SetOSDBuilderPathTasks)               {Write-Host "Tasks:             $SetOSDBuilderPathTasks" -ForegroundColor Gray}
-        else                                        {Write-Host "Tasks:             $SetOSDBuilderPathTasks (does not exist)" -ForegroundColor Gray}
-    if (Test-Path $SetOSDBuilderPathTemplates)           {Write-Host "Templates:         $SetOSDBuilderPathTemplates" -ForegroundColor Gray}
-        else                                        {Write-Host "Templates:         $SetOSDBuilderPathTemplates (does not exist)" -ForegroundColor Gray}
-    if (Test-Path $SetOSDBuilderPathContent)             {Write-Host "Content:           $SetOSDBuilderPathContent" -ForegroundColor Gray}
-        else                                        {Write-Host "Content:           $SetOSDBuilderPathContent (does not exist)" -ForegroundColor Gray} #>
-
 }
 function Show-OSDBuilderHomeTips {
     [CmdletBinding()]
@@ -6335,10 +5693,6 @@ function Show-OSMediaInfo {
     Write-Host "-OSMedia Path OS:       $OSMediaPathOS"
     Write-Host "-OSMedia Path WinPE:    $OSMediaPathWinPE"
     Write-Host "-OSMedia Path Info:     $OSMediaPathInfo"
-}
-function Show-SkipUpdatesInfo {
-    #Show-ActionTime
-    #Write-Host -ForegroundColor DarkGray "                  -SkipUpdates Parameter was used"
 }
 function Show-TaskInfo {
     [CmdletBinding()]
@@ -6843,145 +6197,10 @@ function Update-CumulativePE {
     #=================================================
     #   Update WinPE
     #=================================================
-    if ($OSMajorVersion -ne 10) {
-        $OSDUpdateLCU = $OSDUpdateLCU | Where-Object {$_.OSDWinPE -eq $true}
-        if ($Force.IsPresent) {Return}
-    }
+    if (($OSMajorVersion -ne 10) -and $Force.IsPresent) {Return}
     Show-ActionTime
     Write-Host -ForegroundColor Green "WinPE: (LCU) Latest Cumulative Update"
     Write-Warning "Skipping WinPE LCU Update for this version of Windows"
-    Return
-    if ($OSBuild -ge 18362) {
-        Write-Warning "Skipping WinPE LCU Update for this version of Windows"
-        Return
-    }
-
-    foreach ($Update in $OSDUpdateLCU) {
-        $UpdateLCU = $(Get-ChildItem -Path $SetOSDBuilderPathUpdates -File -Recurse | Where-Object {$_.Name -match $(Split-Path $Update.OriginUri -Leaf)}).FullName | Select-Object -First 1
-        if ($null -eq $UpdateLCU) {Write-Warning "Update-CumulativePE is Null"; Continue}
-        if (!(Test-Path "$UpdateLCU")) {Write-Warning "Update-CumulativePE was not found"; Continue}
-
-        if (! ($Force.IsPresent)) {
-            if (Get-SessionsXml -Path $MountWinPE -KBNumber $Update.FileKBNumber | Where-Object {$_.TargetState -eq 'Installed'}) {
-                Write-Host -ForegroundColor Gray "INSTALLED         $($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"; Continue
-            }
-            if (Get-WindowsPackage -Path "$MountWinPE" | Where-Object {$_.PackageName -match "$($Update.FileKBNumber)"}) {
-                Write-Host -ForegroundColor Gray "INSTALLED         $($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"; Continue
-            }
-        }
-
-        Write-Host -ForegroundColor Cyan "INSTALLING        " -NoNewline
-        Write-Host -ForegroundColor Gray "$($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"
-
-        $CurrentLog = "$PEInfo\logs\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-Add-WindowsPackageSSU-KB$($Update.KBNumber)-WinPE.log"
-        Write-Verbose "CurrentLog: $CurrentLog"
-        
-        Add-WindowsPackageSSU -Path "$MountDirectory" -PackagePath "$UpdateLCU" -LogPath "$CurrentLog" | Out-Null
-
-        $CurrentLog = "$PEInfo\logs\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-Update-CumulativePE-KB$($Update.KBNumber)-WinPE.log"
-        Write-Verbose "CurrentLog: $CurrentLog"
-
-        Try {Add-WindowsPackage -Path "$MountWinPE" -PackagePath "$UpdateLCU" -LogPath "$CurrentLog" | Out-Null}
-        Catch {
-            if ($_.Exception.Message -match '0x800f081e') {Write-Verbose "OSDBuilder: 0x800f081e The package is not applicable to this image" -Verbose}
-            Write-Verbose "OSDBuilder: Review the log for more information" -Verbose
-            Write-Verbose "$CurrentLog" -Verbose
-        }
-
-        if (!($OSVersion -like "6.1.7601.*")) {
-            $CurrentLog = "$PEInfo\logs\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-DismCleanupImage-WinPE.log"
-            Write-Verbose "CurrentLog: $CurrentLog"
-            if ($SkipComponentCleanup) {
-                Write-Warning "Skip: -SkipComponentCleanup Parameter was used"
-            } else {
-                Dism /Image:"$MountWinPE" /Cleanup-Image /StartComponentCleanup /ResetBase /LogPath:"$CurrentLog" | Out-Null
-            }
-        }
-    }
-    #=================================================
-    #   Update WinRE
-    #=================================================
-    Show-ActionTime
-    Write-Host -ForegroundColor Green "WinRE: (LCU) Latest Cumulative Update"
-    foreach ($Update in $OSDUpdateLCU) {
-        $UpdateLCU = $(Get-ChildItem -Path $SetOSDBuilderPathUpdates -File -Recurse | Where-Object {$_.Name -match $(Split-Path $Update.OriginUri -Leaf)}).FullName | Select-Object -First 1
-        if ($null -eq $UpdateLCU) {Write-Warning "Update-CumulativePE is Null"; Continue}
-        if (!(Test-Path "$UpdateLCU")) {Write-Warning "Update-CumulativePE was not found"; Continue}
-
-        if (! ($Force.IsPresent)) {
-            if (Get-SessionsXml -Path $MountWinRE -KBNumber $Update.FileKBNumber | Where-Object {$_.TargetState -eq 'Installed'}) {
-                Write-Host -ForegroundColor Gray "INSTALLED         $($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"; Continue
-            }
-            if (Get-WindowsPackage -Path "$MountWinRE" | Where-Object {$_.PackageName -match "$($Update.FileKBNumber)"}) {
-                Write-Host -ForegroundColor Gray "INSTALLED         $($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"; Continue
-            }
-        }
-
-        Write-Host -ForegroundColor Cyan "INSTALLING        " -NoNewline
-        Write-Host -ForegroundColor Gray "$($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"
-
-        $CurrentLog = "$PEInfo\logs\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-Update-CumulativePE-KB$($Update.KBNumber)-WinRE.log"
-        Write-Verbose "CurrentLog: $CurrentLog"
-        Try {Add-WindowsPackage -Path "$MountWinRE" -PackagePath "$UpdateLCU" -LogPath "$CurrentLog" | Out-Null}
-        Catch {
-            if ($_.Exception.Message -match '0x800f081e') {Write-Verbose "OSDBuilder: 0x800f081e The package is not applicable to this image" -Verbose}
-            Write-Verbose "OSDBuilder: Review the log for more information" -Verbose
-            Write-Verbose "$CurrentLog" -Verbose
-        }
-        if (!($OSVersion -like "6.1.7601.*")) {
-            $CurrentLog = "$PEInfo\logs\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-DismCleanupImage-WinRE.log"
-            Write-Verbose "CurrentLog: $CurrentLog"
-            if ($SkipComponentCleanup) {
-                Write-Warning "Skip: -SkipComponentCleanup Parameter was used"
-            } else {
-                Dism /Image:"$MountWinRE" /Cleanup-Image /StartComponentCleanup /ResetBase /LogPath:"$CurrentLog" | Out-Null
-            }
-        }
-    }
-
-    if ($SkipUpdatesWinSE) {Return}
-    #=================================================
-    #   Update WinSE
-    #=================================================
-    Show-ActionTime
-    Write-Host -ForegroundColor Green "WinSE: (LCU) Latest Cumulative Update"
-    
-    if (($OSMajorVersion -eq 10) -and ($ReleaseId -ge 1903)) {Write-Warning 'Not adding LCU to WinSE to resolve Setup issues'; Return}
-    foreach ($Update in $OSDUpdateLCU) {
-        $UpdateLCU = $(Get-ChildItem -Path $SetOSDBuilderPathUpdates -File -Recurse | Where-Object {$_.Name -match $(Split-Path $Update.OriginUri -Leaf)}).FullName | Select-Object -First 1
-        if ($null -eq $UpdateLCU) {Write-Warning "Update-CumulativePE is Null"; Continue}
-        if (!(Test-Path "$UpdateLCU")) {Write-Warning "Update-CumulativePE was not found"; Continue}
-
-        if (! ($Force.IsPresent)) {
-            if (Get-SessionsXml -Path $MountWinSE -KBNumber $Update.FileKBNumber | Where-Object {$_.TargetState -eq 'Installed'}) {
-                Write-Host -ForegroundColor Gray "INSTALLED         $($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"; Continue
-            }
-            if (Get-WindowsPackage -Path "$MountWinSE" | Where-Object {$_.PackageName -match "$($Update.FileKBNumber)"}) {
-                Write-Host -ForegroundColor Gray "INSTALLED         $($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"; Continue
-            }
-        }
-
-        Write-Host -ForegroundColor Cyan "INSTALLING        " -NoNewline
-        Write-Host -ForegroundColor Gray "$($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"
-
-        $CurrentLog = "$PEInfo\logs\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-Update-CumulativePE-KB$($Update.KBNumber)-WinSE.log"
-        Write-Verbose "CurrentLog: $CurrentLog"
-        Try {Add-WindowsPackage -Path "$MountWinSE" -PackagePath "$UpdateLCU" -LogPath "$CurrentLog" | Out-Null}
-        Catch {
-            if ($_.Exception.Message -match '0x800f081e') {Write-Verbose "OSDBuilder: 0x800f081e The package is not applicable to this image" -Verbose}
-            Write-Verbose "OSDBuilder: Review the log for more information" -Verbose
-            Write-Verbose "$CurrentLog" -Verbose
-        }
-        if (!($OSVersion -like "6.1.7601.*")) {
-            $CurrentLog = "$PEInfo\logs\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-DismCleanupImage-WinSE.log"
-            Write-Verbose "CurrentLog: $CurrentLog"
-            if ($SkipComponentCleanup) {
-                Write-Warning "Skip: -SkipComponentCleanup Parameter was used"
-            } else {
-                Dism /Image:"$MountWinSE" /Cleanup-Image /StartComponentCleanup /ResetBase /LogPath:"$CurrentLog" | Out-Null
-            }
-        }
-    }
 }
 function Update-DotNetOS {
     [CmdletBinding()]
@@ -7339,108 +6558,10 @@ function Update-ServicingStackPE {
     #=================================================
     #   Update WinPE
     #=================================================
-    if ($OSMajorVersion -ne 10) {
-        $OSDUpdateSSU = $OSDUpdateSSU | Where-Object {$_.OSDWinPE -eq $true}
-        if ($Force.IsPresent) {Return}
-    }
+    if (($OSMajorVersion -ne 10) -and $Force.IsPresent) {Return}
     Show-ActionTime
     Write-Host -ForegroundColor Green "WinPE: (SSU) Servicing Stack Update"
     Write-Warning "Skipping WinPE SSU Update for this version of Windows"
-    Return
-    if ($OSBuild -ge 18362) {
-        Write-Warning "Skipping WinPE SSU Update for this version of Windows"
-        Return
-    }
-
-    foreach ($Update in $OSDUpdateSSU) {
-        $UpdateSSU = $(Get-ChildItem -Path $SetOSDBuilderPathUpdates -File -Recurse | Where-Object {$_.Name -match $(Split-Path $Update.OriginUri -Leaf)}).FullName | Select-Object -First 1
-        if ($null -eq $UpdateSSU) {Write-Warning "Update-ServicingStackPE is Null"; Continue}
-        if (!(Test-Path "$UpdateSSU")) {Write-Warning "Update-ServicingStackPE was not found"; Continue}
-
-        if (! ($Force.IsPresent)) {
-            if (Get-SessionsXml -Path $MountWinPE -KBNumber $Update.FileKBNumber | Where-Object {$_.TargetState -eq 'Installed'}) {
-                Write-Host -ForegroundColor Gray "INSTALLED         $($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"; Continue
-            }
-            if (Get-WindowsPackage -Path "$MountWinPE" | Where-Object {$_.PackageName -match "$($Update.FileKBNumber)"}) {
-                Write-Host -ForegroundColor Gray "INSTALLED         $($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"; Continue
-            }
-        }
-
-        Write-Host -ForegroundColor Cyan "INSTALLING        " -NoNewline
-        Write-Host -ForegroundColor Gray "$($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"
-
-        $CurrentLog = "$PEInfo\logs\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-Update-ServicingStackPE-KB$($Update.KBNumber)-WinPE.log"
-        Write-Verbose "CurrentLog: $CurrentLog"
-        Try {Add-WindowsPackage -Path "$MountWinPE" -PackagePath "$UpdateSSU" -LogPath "$CurrentLog" | Out-Null}
-        Catch {
-            if ($_.Exception.Message -match '0x800f081e') {Write-Verbose "OSDBuilder: 0x800f081e The package is not applicable to this image" -Verbose}
-            Write-Verbose "OSDBuilder: Review the log for more information" -Verbose
-            Write-Verbose "$CurrentLog" -Verbose
-        }
-    }
-    #=================================================
-    #   Update WinRE
-    #=================================================
-    Show-ActionTime
-    Write-Host -ForegroundColor Green "WinRE: (SSU) Servicing Stack Update"
-    foreach ($Update in $OSDUpdateSSU) {
-        $UpdateSSU = $(Get-ChildItem -Path $SetOSDBuilderPathUpdates -File -Recurse | Where-Object {$_.Name -match $(Split-Path $Update.OriginUri -Leaf)}).FullName | Select-Object -First 1
-        if ($null -eq $UpdateSSU) {Write-Warning "Update-ServicingStackPE is Null"; Continue}
-        if (!(Test-Path "$UpdateSSU")) {Write-Warning "Update-ServicingStackPE was not found"; Continue}
-
-        if (! ($Force.IsPresent)) {
-            if (Get-SessionsXml -Path $MountWinRE -KBNumber $Update.FileKBNumber | Where-Object {$_.TargetState -eq 'Installed'}) {
-                Write-Host -ForegroundColor Gray "INSTALLED         $($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"; Continue
-            }
-            if (Get-WindowsPackage -Path "$MountWinRE" | Where-Object {$_.PackageName -match "$($Update.FileKBNumber)"}) {
-                Write-Host -ForegroundColor Gray "INSTALLED         $($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"; Continue
-            }
-        }
-
-        Write-Host -ForegroundColor Cyan "INSTALLING        " -NoNewline
-        Write-Host -ForegroundColor Gray "$($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"
-        
-        $CurrentLog = "$PEInfo\logs\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-Update-ServicingStackPE-KB$($Update.KBNumber)-WinRE.log"
-        Write-Verbose "CurrentLog: $CurrentLog"
-        Try {Add-WindowsPackage -Path "$MountWinRE" -PackagePath "$UpdateSSU" -LogPath "$CurrentLog" | Out-Null}
-        Catch {
-            $ErrorMessage = $_.Exception.$ErrorMessage
-            Write-Warning "$CurrentLog"
-            Write-Host "$ErrorMessage"
-            if ($ErrorMessage -like "*0x800f081e*") {Write-Warning "Update not applicable to this Operating System"}
-        }
-    }
-    #=================================================
-    #   Update WinSE
-    #=================================================
-    Show-ActionTime
-    Write-Host -ForegroundColor Green "WinSE: (SSU) Servicing Stack Update"
-    foreach ($Update in $OSDUpdateSSU) {
-        $UpdateSSU = $(Get-ChildItem -Path $SetOSDBuilderPathUpdates -File -Recurse | Where-Object {$_.Name -match $(Split-Path $Update.OriginUri -Leaf)}).FullName | Select-Object -First 1
-        if ($null -eq $UpdateSSU) {Write-Warning "Update-ServicingStackPE is Null"; Continue}
-        if (!(Test-Path "$UpdateSSU")) {Write-Warning "Update-ServicingStackPE was not found"; Continue}
-
-        if (! ($Force.IsPresent)) {
-            if (Get-SessionsXml -Path $MountWinSE -KBNumber $Update.FileKBNumber | Where-Object {$_.TargetState -eq 'Installed'}) {
-                Write-Host -ForegroundColor Gray "INSTALLED         $($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"; Continue
-            }
-            if (Get-WindowsPackage -Path "$MountWinSE" | Where-Object {$_.PackageName -match "$($Update.FileKBNumber)"}) {
-                Write-Host -ForegroundColor Gray "INSTALLED         $($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"; Continue
-            }
-        }
-
-        Write-Host -ForegroundColor Cyan "INSTALLING        " -NoNewline
-        Write-Host -ForegroundColor Gray "$($Update.Title) - $(Split-Path $Update.OriginUri -Leaf)"
-        
-        $CurrentLog = "$PEInfo\logs\$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-Update-ServicingStackPE-KB$($Update.KBNumber)-WinSE.log"
-        Write-Verbose "CurrentLog: $CurrentLog"
-        Try {Add-WindowsPackage -Path "$MountWinSE" -PackagePath "$UpdateSSU" -LogPath "$CurrentLog" | Out-Null}
-        Catch {
-            if ($_.Exception.Message -match '0x800f081e') {Write-Verbose "OSDBuilder: 0x800f081e The package is not applicable to this image" -Verbose}
-            Write-Verbose "OSDBuilder: Review the log for more information" -Verbose
-            Write-Verbose "$CurrentLog" -Verbose
-        }
-    }
 }
 function Update-SetupDUMEDIA {
     [CmdletBinding()]
@@ -7512,12 +6633,6 @@ function Update-SourcesPE {
     #=================================================
     if ($OSBuild -ge 18362) {
         Write-Warning "Skipping WinPE Update for this version of Windows"
-        Return
-    }
-    if ($ReleaseId -ge 1903) {
-        Write-Warning "This step is currently disabled for Windows 10 1903"
-        Write-Warning "If this is the first time you are seeing this warning,"
-        Write-Warning "you should Update-OSMedia from Windows 10 1903 18362.30"
         Return
     }
     #=================================================

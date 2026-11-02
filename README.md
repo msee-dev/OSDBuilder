@@ -243,6 +243,8 @@ Microsoft recommends to reinstall the inbox apps after adding languages and upda
 * Only apps that are provisioned in the image are reinstalled, removed apps are not added again, and an app is skipped when the image contains a newer version
   (for a bundle the bundle version that DISM reports, `Microsoft.WindowsCalculator_2021.2502.2.0` contains the application package `11.2502.2.0`)
 * The dependencies are read from the AppxManifest of each app (x64 and x86 frameworks for an x64 image), the license is the `.xml` with the same name
+* Each app is provisioned for the `Regions` it has in the image (`all`, or a list of country codes for the apps with DMA restrictions),
+  without `-Regions` DISM resets them and Windows 11 installs the app only when it is pinned to the Start layout, so the inbox apps were missing after deployment
 * `RemoveAppxProvisionedPackage` of the Task runs afterwards
 
 ### Features on Demand (Add-WindowsCapability)

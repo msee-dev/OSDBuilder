@@ -139,6 +139,8 @@ function Update-InboxAppsOS {
     Only apps that are provisioned in the image are reinstalled, apps removed from the image are not added
     An app is skipped when the image contains a newer version
     The dependencies are read from the AppxManifest of each app, the license is the .xml with the same name
+    The app is provisioned for the Regions it has in the image (-Regions), without them Windows 11 installs the app
+    only when it is pinned to the Start layout
     #>
     [CmdletBinding()]
     param ()
@@ -219,6 +221,11 @@ function Update-InboxAppsOS {
             ErrorAction = 'Stop'
         }
         if ($Dependencies.Count -gt 0) {$Params.DependencyPackagePath = $Dependencies}
+        #Windows 11 provisions an app only for its Regions (all or a list of ISO 3166-1 codes, the DMA apps use a list)
+        #Without -Regions DISM resets the Regions and the app is installed only when it is pinned to the Start layout
+        #The Regions of the image are kept, an app without Regions is provisioned for all regions
+        $Regions = if ($App.PSObject.Properties['Regions'] -and -not [string]::IsNullOrWhiteSpace($App.Regions)) {[string]$App.Regions} else {'all'}
+        $Params.Regions = $Regions
         $License = [System.IO.Path]::ChangeExtension($Source.Path, '.xml')
         if (Test-Path $License) {$Params.LicensePath = $License} else {$Params.SkipLicense = $true}
 

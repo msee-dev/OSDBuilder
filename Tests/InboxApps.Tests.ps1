@@ -228,10 +228,10 @@ Describe 'Update-InboxAppsOS' {
         Mock Get-OSDBuilderContentPackLanguages {}
         Mock Add-AppxProvisionedPackage {}
         Mock Get-AppxProvisionedPackage {
-            [PSCustomObject]@{DisplayName = 'Microsoft.WindowsCalculator'; Version = '11.2400.0.0'; PackageName = 'Microsoft.WindowsCalculator_11.2400.0.0_neutral_~_8wekyb3d8bbwe'}
-            [PSCustomObject]@{DisplayName = 'Microsoft.BingNews'; Version = '4.55.1.0'; PackageName = 'Microsoft.BingNews_4.55.1.0_neutral_~_8wekyb3d8bbwe'}
-            [PSCustomObject]@{DisplayName = 'Microsoft.Windows.Photos'; Version = '2026.1.0.0'; PackageName = 'Microsoft.Windows.Photos_2026.1.0.0_x64__8wekyb3d8bbwe'}
-            [PSCustomObject]@{DisplayName = 'Microsoft.SecHealthUI'; Version = '1000.0.0.0'; PackageName = 'Microsoft.SecHealthUI_1000.0.0.0_x64__8wekyb3d8bbwe'}
+            [PSCustomObject]@{DisplayName = 'Microsoft.WindowsCalculator'; Version = '11.2400.0.0'; PackageName = 'Microsoft.WindowsCalculator_11.2400.0.0_neutral_~_8wekyb3d8bbwe'; Regions = 'all'}
+            [PSCustomObject]@{DisplayName = 'Microsoft.BingNews'; Version = '4.55.1.0'; PackageName = 'Microsoft.BingNews_4.55.1.0_neutral_~_8wekyb3d8bbwe'; Regions = 'AD;AE;US'}
+            [PSCustomObject]@{DisplayName = 'Microsoft.Windows.Photos'; Version = '2026.1.0.0'; PackageName = 'Microsoft.Windows.Photos_2026.1.0.0_x64__8wekyb3d8bbwe'; Regions = 'all'}
+            [PSCustomObject]@{DisplayName = 'Microsoft.SecHealthUI'; Version = '1000.0.0.0'; PackageName = 'Microsoft.SecHealthUI_1000.0.0.0_x64__8wekyb3d8bbwe'; Regions = 'all'}
         }
     }
 
@@ -249,6 +249,23 @@ Describe 'Update-InboxAppsOS' {
     It 'adds an app without a license file with SkipLicense' {
         Update-InboxAppsOS 6>$null
         Should -Invoke Add-AppxProvisionedPackage -Times 1 -Exactly -ParameterFilter {($PackagePath -like '*Microsoft.BingNews*') -and $SkipLicense}
+    }
+
+    #Windows 11 provisions an app only for the Regions of the package, without -Regions DISM resets them and the app
+    #is installed only when it is pinned to the Start layout (Microsoft Learn, Add-AppxProvisionedPackage -Regions)
+    It 'provisions the app for the Regions of the image' {
+        Update-InboxAppsOS 6>$null
+        Should -Invoke Add-AppxProvisionedPackage -Times 1 -Exactly -ParameterFilter {($PackagePath -like '*Calculator*') -and ($Regions -eq 'all')}
+        Should -Invoke Add-AppxProvisionedPackage -Times 1 -Exactly -ParameterFilter {($PackagePath -like '*BingNews*') -and ($Regions -eq 'AD;AE;US')}
+    }
+
+    It 'provisions an app for all regions when the image reports <Case>' -ForEach @(
+        @{Case = 'no Regions'; App = @{DisplayName = 'Microsoft.WindowsCalculator'; Version = '11.2400.0.0'; PackageName = 'Microsoft.WindowsCalculator_11.2400.0.0_neutral_~_8wekyb3d8bbwe'}}
+        @{Case = 'empty Regions'; App = @{DisplayName = 'Microsoft.WindowsCalculator'; Version = '11.2400.0.0'; PackageName = 'Microsoft.WindowsCalculator_11.2400.0.0_neutral_~_8wekyb3d8bbwe'; Regions = ''}}
+    ) {
+        Mock Get-AppxProvisionedPackage {[PSCustomObject]$App}
+        Update-InboxAppsOS 6>$null
+        Should -Invoke Add-AppxProvisionedPackage -Times 1 -Exactly -ParameterFilter {($PackagePath -like '*Calculator*') -and ($Regions -eq 'all')}
     }
 
     It 'keeps a newer app in the image' {

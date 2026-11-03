@@ -252,8 +252,8 @@ $LxpFiles = @(Get-ChildItem -Path $IsoExtractPath -Filter 'LanguageExperiencePac
 foreach ($Language in ($Languages | ForEach-Object {$_.ToLower()} | Sort-Object -Unique)) {
     #The Local Experience Pack in IsoExtract is added for every language, also for the language of the OSMedia and languages with a .cab
     $Lxp = $LxpFiles | Where-Object {$_.Name -eq "LanguageExperiencePack.$Language.Neutral.appx"} | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    #New-OSBuild expects the path relative to the Content directory
-    if ($Lxp) {$LocalExperiencePack += $Lxp.FullName.Substring($SetOSDBuilderPathContent.TrimEnd('\', '/').Length + 1)}
+    #New-OSBuild expects the path relative to the Content directory, with backslashes like the other Task paths on every platform
+    if ($Lxp) {$LocalExperiencePack += $Lxp.FullName.Substring($SetOSDBuilderPathContent.TrimEnd('\', '/').Length + 1).Replace('/', '\')}
     if ($Language -in $ImageLanguages) {
         Write-Host "$Language is the language of the OSMedia" -ForegroundColor DarkGray; Continue
     }

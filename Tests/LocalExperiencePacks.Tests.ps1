@@ -132,15 +132,6 @@ Describe 'Add-OSDBuilderLocalExperiencePack' {
         Should -Invoke Add-AppxProvisionedPackage -Times 0 -Exactly
     }
 
-    It 'fails when reading the manifest throws' {
-        Mock Get-OSDBuilderAppxManifest {throw 'Access denied'}
-        $Lxp = New-TestLxp -Language 'nn-NO' -Version '26100.129.249.0' -MinVersion '10.0.25846.0'
-        $Output = (Add-OSDBuilderLocalExperiencePack -Path 'C:\Mount' -PackagePath $Lxp -Build 26200 -Verbose 6>$null 3>&1 4>&1) -join "`n"
-        $Output | Should -BeLike '*Unable to read the AppxManifest of*LanguageExperiencePack.nn-no.Neutral.appx*'
-        $Output | Should -BeLike '*is not a valid .appx*'
-        Should -Invoke Add-AppxProvisionedPackage -Times 0 -Exactly
-    }
-
     It 'fails for an .appx without identity name' {
         Mock Get-OSDBuilderAppxManifest {[PSCustomObject]@{Name = ''; Version = '1.0.0.0'}}
         $Lxp = New-TestLxp -Language 'nn-NO' -Version '26100.129.249.0' -MinVersion '10.0.25846.0'

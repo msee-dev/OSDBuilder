@@ -283,19 +283,4 @@ Describe 'Save-OSDBuilderLocalExperiencePack' {
         $Destination | Should -Not -Exist
     }
 
-    It 'downloads again when reading the saved LXP throws' {
-        Save-OSDBuilderLocalExperiencePack -Language 'de-DE' 6>$null 3>$null
-        Mock Get-OSDBuilderAppxManifest {throw 'Access denied'} -ParameterFilter {$Path -eq $Destination}
-        $Verbose = (Save-OSDBuilderLocalExperiencePack -Language 'de-DE' -Verbose 6>$null 3>$null 4>&1) -join "`n"
-        $Verbose | Should -BeLike "*Unable to read $Destination, it is downloaded again*"
-        Should -Invoke Invoke-OSDBuilderWinget -Times 2 -Exactly -ParameterFilter {$Arguments -notcontains '--help'}
-    }
-
-    It 'warns when reading the downloaded LXP throws' {
-        Mock Get-OSDBuilderAppxManifest {throw 'Access denied'}
-        $Output = (Save-OSDBuilderLocalExperiencePack -Language 'de-DE' -Verbose 6>$null 3>&1 4>&1) -join "`n"
-        $Output | Should -BeLike '*Unable to read the AppxManifest of*Microsoft.LanguageExperiencePackde-DE_26100.169.270.0_Desktop_Neutral.appx*'
-        $Output | Should -BeLike '*is not the Local Experience Pack of de-DE*'
-        $Destination | Should -Not -Exist
-    }
 }

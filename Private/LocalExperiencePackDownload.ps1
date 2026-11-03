@@ -172,9 +172,7 @@ function Save-OSDBuilderLocalExperiencePack {
         #   Installed
         #=================================================
         if ((Test-Path $AppxDestination) -and (Test-Path $LicenseDestination)) {
-            $Existing = $null
-            try {$Existing = Get-OSDBuilderAppxManifest -Path $AppxDestination -ErrorAction Stop}
-            catch {Write-Verbose "Unable to read $AppxDestination, it is downloaded again"}
+            $Existing = Get-OSDBuilderAppxManifest -Path $AppxDestination
             if ($Existing -and ([version]$Existing.Version -ge $Expected.Version)) {
                 Write-Host -ForegroundColor DarkGray "    $($Existing.Version) is already downloaded"
                 Continue
@@ -208,9 +206,7 @@ function Save-OSDBuilderLocalExperiencePack {
         if ($null -eq $Appx) {Write-Warning "Local Experience Packs: winget did not download a Local Experience Pack for $Tag"; Continue}
         if ($null -eq $License) {Write-Warning "Local Experience Packs: winget did not download the license for $Tag, the Entra ID account needs the License Administrator role"; Continue}
 
-        $Manifest = $null
-        try {$Manifest = Get-OSDBuilderAppxManifest -Path $Appx.FullName -ErrorAction Stop}
-        catch {Write-Verbose "Unable to read the AppxManifest of $($Appx.FullName)"}
+        $Manifest = Get-OSDBuilderAppxManifest -Path $Appx.FullName
         if (($null -eq $Manifest) -or ($Manifest.Name -ne "Microsoft.LanguageExperiencePack$Tag")) {
             Write-Warning "Local Experience Packs: $($Appx.Name) is not the Local Experience Pack of $Tag"
             Continue

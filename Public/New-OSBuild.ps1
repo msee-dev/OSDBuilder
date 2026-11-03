@@ -162,53 +162,12 @@ function New-OSBuild {
         #=================================================
         #   OSBuild
         #=================================================
-        if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild') {
-            if ($PSCmdlet.ParameterSetName -eq 'Taskless') {
-                if ($Name) {
-                    Write-Verbose "Parameter Name: $Name"
-                    $BirdBox = foreach ($Task in $Name) {
-                        $ObjectProperties = @{
-                            Name = $Task
-                        }
-                        New-Object -TypeName PSObject -Property $ObjectProperties
-                    }
-                } else {
-                    $BirdBox = @()
-                    if ($ShowHiddenOSMedia.IsPresent) {
-                        $BirdBox = Get-OSMedia
-                    } else {
-                        $BirdBox = Get-OSMedia -Revision OK -OSMajorVersion 10
-                    }
-                    $BirdBox = $BirdBox | Out-GridView -PassThru -Title "Select one or more OSMedia to Build (Cancel to Exit) and press OK"
-                }
-                if ($null -eq $BirdBox) {
-                    Write-Warning "Could not find a matching OSMedia . . . Exiting!"
-                    Return
-                }
-            } else {
-                if ($ByTaskName) {
-                    $BirdBox = @()
-                    $BirdBox = Get-OSBuildTask | Where-Object {$_.TaskName -eq "$ByTaskName"}
-                } else {
-                    $BirdBox = @()
-                    $BirdBox = Get-OSBuildTask | Out-GridView -PassThru -Title "OSBuild Tasks: Select one or more Tasks to execute and press OK (Cancel to Exit)"
-                }
-
-                if ($null -eq $BirdBox) {
-                    Write-Warning "OSBuild Task was not selected or found . . . Exiting!"
-                    Return
-                }
-            }
-        }
-        #=================================================
-        #   Update-OSMedia
-        #=================================================
-        if ($MyInvocation.MyCommand.Name -eq 'Update-OSMedia') {
+        if ($PSCmdlet.ParameterSetName -eq 'Taskless') {
             if ($Name) {
-                $BirdBox = foreach ($Item in $Name) {
-                    Write-Verbose '========== Checking $Item'
+                Write-Verbose "Parameter Name: $Name"
+                $BirdBox = foreach ($Task in $Name) {
                     $ObjectProperties = @{
-                        Name = $Item
+                        Name = $Task
                     }
                     New-Object -TypeName PSObject -Property $ObjectProperties
                 }
@@ -217,18 +176,26 @@ function New-OSBuild {
                 if ($ShowHiddenOSMedia.IsPresent) {
                     $BirdBox = Get-OSMedia
                 } else {
-                    $BirdBox = Get-OSMedia -Revision OK -Updates Update
+                    $BirdBox = Get-OSMedia -Revision OK -OSMajorVersion 10
                 }
-                if ($UpdateNeeded.IsPresent) {
-                    if ($BirdBox | Where-Object {$_.MajorVersion -eq 6}) {
-                        Write-Warning "UpdateNeeded does not support Legacy Operating Systems"
-                        Write-Warning "Legacy Operating Systems have been removed from the results"
-                        $BirdBox = $BirdBox | Where-Object {$_.MajorVersion -eq 10}
-                    }
-                    $BirdBox = $BirdBox | Where-Object {($_.Servicing -eq '') -or ($_.Cumulative -eq '') -or ($_.Adobe -eq '')}
-                }
-                $BirdBox = $BirdBox | Where-Object {($_.MajorVersion -eq 10) -or ($_.InstallationType -like "*Client*" -and $_.Version -like "6.1.7601*") -or ($_.InstallationType -like "*Server*" -and $_.Version -like "6.3*")}
-                $BirdBox = $BirdBox | Out-GridView -PassThru -Title "Select one or more OSMedia to Update (Cancel to Exit) and press OK"
+                $BirdBox = $BirdBox | Out-GridView -PassThru -Title "Select one or more OSMedia to Build (Cancel to Exit) and press OK"
+            }
+            if ($null -eq $BirdBox) {
+                Write-Warning "Could not find a matching OSMedia . . . Exiting!"
+                Return
+            }
+        } else {
+            if ($ByTaskName) {
+                $BirdBox = @()
+                $BirdBox = Get-OSBuildTask | Where-Object {$_.TaskName -eq "$ByTaskName"}
+            } else {
+                $BirdBox = @()
+                $BirdBox = Get-OSBuildTask | Out-GridView -PassThru -Title "OSBuild Tasks: Select one or more Tasks to execute and press OK (Cancel to Exit)"
+            }
+
+            if ($null -eq $BirdBox) {
+                Write-Warning "OSBuild Task was not selected or found . . . Exiting!"
+                Return
             }
         }
 
@@ -236,87 +203,85 @@ function New-OSBuild {
             #=================================================
             #   New-OSBuild
             #=================================================
-            if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild') {
-                if ($PSCmdlet.ParameterSetName -eq 'Taskless') {
-                    #$Task = Get-OSMedia -Revision OK | Where-Object {$_.Name -eq $Bird.Name}
-                    $Task = Get-OSMedia | Where-Object {$_.Name -eq $Bird.Name} | Sort-Object ModifiedTime | Select-Object -Last 1
+            if ($PSCmdlet.ParameterSetName -eq 'Taskless') {
+                #$Task = Get-OSMedia -Revision OK | Where-Object {$_.Name -eq $Bird.Name}
+                $Task = Get-OSMedia | Where-Object {$_.Name -eq $Bird.Name} | Sort-Object ModifiedTime | Select-Object -Last 1
 
-                    $TaskType = 'OSBuild'
-                    $TaskName = 'Taskless'
-                } else {
-                    (Get-Content "$($Bird.FullName)").replace('WinPEAddDaRT', 'WinPEDaRT') | Set-Content "$($Bird.FullName)"
-                    $Task = Get-Content "$($Bird.FullName)" | ConvertFrom-Json
+                $TaskType = 'OSBuild'
+                $TaskName = 'Taskless'
+            } else {
+                (Get-Content "$($Bird.FullName)").replace('WinPEAddDaRT', 'WinPEDaRT') | Set-Content "$($Bird.FullName)"
+                $Task = Get-Content "$($Bird.FullName)" | ConvertFrom-Json
 
-                    $TaskType = $Task.TaskType
-                    $TaskName = $Task.TaskName
-                }
-                $TaskVersion = $Task.TaskVersion
-                $CustomName = $Task.CustomName
-                if ((Get-IsContentPacksEnabled) -and (!($SkipContentPacks.IsPresent))) {
-                    if ($null -eq $Task.ContentPacks) {
-                        $ContentPacks = @('_Global')
-                    } else {
-                        $ContentPacks = @('_Global')
-                        $ContentPacks = ($ContentPacks += $Task.ContentPacks)
-                    }
-                }
-                $TaskOSMFamily = $Task.OSMFamily
-                $TaskOSMGuid = $Task.OSMGuid
-                $OSMediaName = $Task.Name
-                if (Test-Path "$SetOSDBuilderPathOSMedia\$OSMediaName") {$OSMediaPath = "$SetOSDBuilderPathOSMedia\$OSMediaName"}
-                if (Test-Path "$SetOSDBuilderPathOSImport\$OSMediaName") {$OSMediaPath = "$SetOSDBuilderPathOSImport\$OSMediaName"}
-                $EnableNetFX3 = $Task.EnableNetFX3
-                $StartLayoutXML = $Task.StartLayoutXML
-                $UnattendXML = $Task.UnattendXML
-                $WinPEAutoExtraFiles = $Task.WinPEAutoExtraFiles
-                $WinPEOSDCloud = $Task.WinPEOSDCloud
-                $WinREWiFi = $Task.WinREWiFi
-                $WinPEDaRT = $Task.WinPEDart
-                $ExtraFiles = $Task.ExtraFiles
-                $Scripts = $Task.Scripts
-                $Drivers = $Task.Drivers
-
-                $Packages = $Task.AddWindowsPackage
-                $RemovePackage = $Task.RemoveWindowsPackage
-                $FeaturesOnDemand = $Task.AddFeatureOnDemand
-                $AddWindowsCapability = @($Task.AddWindowsCapability | Where-Object {$_})
-                $EnableFeature = $Task.EnableWindowsOptionalFeature
-                $DisableFeature = $Task.DisableWindowsOptionalFeature
-                $RemoveAppx = $Task.RemoveAppxProvisionedPackage
-                $RemoveCapability = $Task.RemoveWindowsCapability
-
-                $WinPEDrivers = $Task.WinPEDrivers
-                $WinPEScriptsPE = $Task.WinPEScriptsPE
-                $WinPEScriptsRE = $Task.WinPEScriptsRE
-                $WinPEScriptsSE = $Task.WinPEScriptsSE
-                $WinPEExtraFilesPE = $Task.WinPEExtraFilesPE
-                $WinPEExtraFilesRE = $Task.WinPEExtraFilesRE
-                $WinPEExtraFilesSE = $Task.WinPEExtraFilesSE
-                $WinPEADKPE = $Task.WinPEADKPE
-                $WinPEADKRE = $Task.WinPEADKRE
-                $WinPEADKSE = $Task.WinPEADKSE
-                
-                $SetAllIntl = $Task.LangSetAllIntl
-                $SetInputLocale = $Task.LangSetInputLocale
-                $SetSKUIntlDefaults = $Task.LangSetSKUIntlDefaults
-                $SetSetupUILang = $Task.LangSetSetupUILang
-                $SetSysLocale = $Task.LangSetSysLocale
-                $SetUILang = $Task.LangSetUILang
-                $SetUILangFallback = $Task.LangSetUILangFallback
-                $SetUserLocale = $Task.LangSetUserLocale
-                $LanguageFeatures = $Task.LanguageFeature
-                $LanguagePacks = $Task.LanguagePack
-                $LanguageInterfacePacks = $Task.LanguageInterfacePack
-                $LocalExperiencePacks = $Task.LocalExperiencePacks
-                $LanguageCopySources = $Task.LanguageCopySources
-                
-                if (!($TaskName -eq 'Taskless')) {Show-TaskInfo}
+                $TaskType = $Task.TaskType
+                $TaskName = $Task.TaskName
             }
+            $TaskVersion = $Task.TaskVersion
+            $CustomName = $Task.CustomName
+            if ((Get-IsContentPacksEnabled) -and (!($SkipContentPacks.IsPresent))) {
+                if ($null -eq $Task.ContentPacks) {
+                    $ContentPacks = @('_Global')
+                } else {
+                    $ContentPacks = @('_Global')
+                    $ContentPacks = ($ContentPacks += $Task.ContentPacks)
+                }
+            }
+            $TaskOSMFamily = $Task.OSMFamily
+            $TaskOSMGuid = $Task.OSMGuid
+            $OSMediaName = $Task.Name
+            if (Test-Path "$SetOSDBuilderPathOSMedia\$OSMediaName") {$OSMediaPath = "$SetOSDBuilderPathOSMedia\$OSMediaName"}
+            if (Test-Path "$SetOSDBuilderPathOSImport\$OSMediaName") {$OSMediaPath = "$SetOSDBuilderPathOSImport\$OSMediaName"}
+            $EnableNetFX3 = $Task.EnableNetFX3
+            $StartLayoutXML = $Task.StartLayoutXML
+            $UnattendXML = $Task.UnattendXML
+            $WinPEAutoExtraFiles = $Task.WinPEAutoExtraFiles
+            $WinPEOSDCloud = $Task.WinPEOSDCloud
+            $WinREWiFi = $Task.WinREWiFi
+            $WinPEDaRT = $Task.WinPEDart
+            $ExtraFiles = $Task.ExtraFiles
+            $Scripts = $Task.Scripts
+            $Drivers = $Task.Drivers
+
+            $Packages = $Task.AddWindowsPackage
+            $RemovePackage = $Task.RemoveWindowsPackage
+            $FeaturesOnDemand = $Task.AddFeatureOnDemand
+            $AddWindowsCapability = @($Task.AddWindowsCapability | Where-Object {$_})
+            $EnableFeature = $Task.EnableWindowsOptionalFeature
+            $DisableFeature = $Task.DisableWindowsOptionalFeature
+            $RemoveAppx = $Task.RemoveAppxProvisionedPackage
+            $RemoveCapability = $Task.RemoveWindowsCapability
+
+            $WinPEDrivers = $Task.WinPEDrivers
+            $WinPEScriptsPE = $Task.WinPEScriptsPE
+            $WinPEScriptsRE = $Task.WinPEScriptsRE
+            $WinPEScriptsSE = $Task.WinPEScriptsSE
+            $WinPEExtraFilesPE = $Task.WinPEExtraFilesPE
+            $WinPEExtraFilesRE = $Task.WinPEExtraFilesRE
+            $WinPEExtraFilesSE = $Task.WinPEExtraFilesSE
+            $WinPEADKPE = $Task.WinPEADKPE
+            $WinPEADKRE = $Task.WinPEADKRE
+            $WinPEADKSE = $Task.WinPEADKSE
+            
+            $SetAllIntl = $Task.LangSetAllIntl
+            $SetInputLocale = $Task.LangSetInputLocale
+            $SetSKUIntlDefaults = $Task.LangSetSKUIntlDefaults
+            $SetSetupUILang = $Task.LangSetSetupUILang
+            $SetSysLocale = $Task.LangSetSysLocale
+            $SetUILang = $Task.LangSetUILang
+            $SetUILangFallback = $Task.LangSetUILangFallback
+            $SetUserLocale = $Task.LangSetUserLocale
+            $LanguageFeatures = $Task.LanguageFeature
+            $LanguagePacks = $Task.LanguagePack
+            $LanguageInterfacePacks = $Task.LanguageInterfacePack
+            $LocalExperiencePacks = $Task.LocalExperiencePacks
+            $LanguageCopySources = $Task.LanguageCopySources
+            
+            if (!($TaskName -eq 'Taskless')) {Show-TaskInfo}
             #=================================================
             #   OSBuild
             Write-Verbose '19.1.1 Validate Proper TaskVersion'
             #=================================================
-            if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild' -and (!($TaskName -eq 'Taskless'))) {
+            if ($TaskName -ne 'Taskless') {
                 if ([System.Version]$TaskVersion -lt [System.Version]"19.1.4.0") {
                     Write-Host '========================================================================================' -ForegroundColor DarkGray
                     Write-Warning "OSDBuilder Tasks need to be version 19.1.4.0 or newer"
@@ -328,7 +293,7 @@ function New-OSBuild {
             #   OSBuild
             Write-Verbose '19.3.21 Select Latest OSMedia'
             #=================================================
-            if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild' -and (!($DontUseNewestMedia))) {
+            if (!($DontUseNewestMedia)) {
                 if ($TaskName -eq 'Taskless') {
                     $TaskOSMedia = Get-OSMedia | Where-Object {$_.Name -eq $OSMediaName}
                     Write-Verbose "$TaskOSMedia | ft"
@@ -373,7 +338,7 @@ function New-OSBuild {
             #   OSBuild
             Write-Verbose '19.1.22 Templates'
             #=================================================
-            if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild' -and (Test-Path $SetOSDBuilderPathTemplates) -and (!($SkipTemplates.IsPresent))) {
+            if ((Test-Path $SetOSDBuilderPathTemplates) -and (!($SkipTemplates.IsPresent))) {
                 Get-ChildItem -Path $SetOSDBuilderPathTemplates *.json | foreach {(Get-Content "$($_.FullName)").replace('WinPEAddDaRT', 'WinPEDaRT') | Set-Content "$($_.FullName)"}
                 $Templates = @()
                 $Templates = Get-ChildItem -Path $SetOSDBuilderPathTemplates OSBuild*.json | ForEach-Object {Get-Content -Path $_.FullName | ConvertFrom-Json | Select-Object -Property *}
@@ -441,20 +406,14 @@ function New-OSBuild {
                     $LanguageCopySources += @($Task.LanguageCopySources | Where-Object {$_})
                 }
             }
-            if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild') {
-                if ($EnableNetFX.IsPresent) {$EnableNetFX3 = $true}
-                if ((Get-IsContentPacksEnabled) -and ($SelectContentPacks.IsPresent)) {
-                    $ContentPacks = (Get-TaskContentPacks -Select).Name
-                }
-                Show-TaskInfo
+            if ($EnableNetFX.IsPresent) {$EnableNetFX3 = $true}
+            if ((Get-IsContentPacksEnabled) -and ($SelectContentPacks.IsPresent)) {
+                $ContentPacks = (Get-TaskContentPacks -Select).Name
             }
+            Show-TaskInfo
             #=================================================
             Write-Verbose '19.1.1 Set Proper Paths'
             #=================================================
-            if ($MyInvocation.MyCommand.Name -eq 'Update-OSMedia') {
-                if (Test-Path "$SetOSDBuilderPathOSImport\$($Bird.Name)") {$OSMediaPath = "$SetOSDBuilderPathOSImport\$($Bird.Name)"}
-                if (Test-Path "$SetOSDBuilderPathOSMedia\$($Bird.Name)") {$OSMediaPath = "$SetOSDBuilderPathOSMedia\$($Bird.Name)"}
-            }
             $OSImagePath = "$OSMediaPath\OS\sources\install.wim"
 
             if (!(Test-Path "$OSMediaPath\WindowsImage.txt")) {
@@ -566,13 +525,8 @@ function New-OSBuild {
             #=================================================
             Write-Verbose '19.1.1 WorkingName and WorkingPath'
             #=================================================
-            if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild') {
-                $WorkingName = "build$((Get-Date).ToString('yyMMddhhmm'))"
-                $WorkingPath = "$SetOSDBuilderPathOSBuilds\$WorkingName"
-            } else {
-                $WorkingName = "build$((Get-Date).ToString('yyMMddhhmm'))"
-                $WorkingPath = "$SetOSDBuilderPathOSMedia\$WorkingName"
-            }
+            $WorkingName = "build$((Get-Date).ToString('yyMMddhhmm'))"
+            $WorkingPath = "$SetOSDBuilderPathOSBuilds\$WorkingName"
             #=================================================
             Write-Verbose '19.1.1 Remove Existing OSMedia'
             #=================================================
@@ -588,7 +542,7 @@ function New-OSBuild {
                 #   OSBuild
                 #   Driver Templates
                 #=================================================
-                if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild' -and (Test-Path $SetOSDBuilderPathTemplates) -and (!($SkipTemplates.IsPresent))) {
+                if ((Test-Path $SetOSDBuilderPathTemplates) -and (!($SkipTemplates.IsPresent))) {
                     $DriverTemplates = Get-OSTemplateDrivers
                     if ($DriverTemplates) {
                         Write-Host '========================================================================================' -ForegroundColor DarkGray
@@ -600,7 +554,7 @@ function New-OSBuild {
                 #   OSBuild
                 #   ExtraFiles Templates
                 #=================================================
-                if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild' -and (Test-Path $SetOSDBuilderPathTemplates) -and (!($SkipTemplates.IsPresent))) {
+                if ((Test-Path $SetOSDBuilderPathTemplates) -and (!($SkipTemplates.IsPresent))) {
                     #Write-Host "OSBuild Template ExtraFiles Directories (Searched)" -ForegroundColor Green
                     $ExtraFilesTemplates = Get-OSTemplateExtraFiles
                     if ($ExtraFilesTemplates) {
@@ -613,7 +567,7 @@ function New-OSBuild {
                 #   OSBuild
                 #   Registry REG Templates
                 #=================================================
-                if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild' -and (Test-Path $SetOSDBuilderPathTemplates) -and (!($SkipTemplates.IsPresent))) {
+                if ((Test-Path $SetOSDBuilderPathTemplates) -and (!($SkipTemplates.IsPresent))) {
                     #Write-Host "OSBuild Template Registry REG Directories (Searched)" -ForegroundColor Green
                     $RegistryTemplatesReg = Get-OSTemplateRegistryReg
                     if ($RegistryTemplatesReg) {
@@ -626,7 +580,7 @@ function New-OSBuild {
                 #   OSBuild
                 #   Registry XML Templates
                 #=================================================
-                if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild' -and (Test-Path $SetOSDBuilderPathTemplates) -and (!($SkipTemplates.IsPresent))) {
+                if ((Test-Path $SetOSDBuilderPathTemplates) -and (!($SkipTemplates.IsPresent))) {
                     #Write-Host "OSBuild Template Registry XML Directories (Searched)" -ForegroundColor Green
                     $RegistryTemplatesXml = Get-OSTemplateRegistryXml
                     if ($RegistryTemplatesXml) {
@@ -639,7 +593,7 @@ function New-OSBuild {
                 #   OSBuild
                 #   Script Templates
                 #=================================================
-                if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild' -and (Test-Path $SetOSDBuilderPathTemplates) -and (!($SkipTemplates.IsPresent))) {
+                if ((Test-Path $SetOSDBuilderPathTemplates) -and (!($SkipTemplates.IsPresent))) {
                     #Write-Host "OSBuild Template Script Directories (Searched)" -ForegroundColor Green
                     $ScriptTemplates = Get-OSTemplateScripts
                     if ($ScriptTemplates) {
@@ -664,10 +618,6 @@ function New-OSBuild {
             #   Update Filters
             #=================================================
             if ($OSInstallationType -match 'Core'){$OSDUpdates = $OSDUpdates | Where-Object {$_.UpdateGroup -ne 'AdobeSU'}}
-            if ($MyInvocation.MyCommand.Name -eq 'Update-OSMedia' -and $OSMajorVersion -eq 10) {
-                $OSDUpdates = $OSDUpdates | Where-Object {$_.UpdateGroup -ne ''}
-                $OSDUpdates = $OSDUpdates | Where-Object {$_.UpdateGroup -ne 'Optional'}
-            }
             #=================================================
             #   Include Exclude
             #=================================================
@@ -780,38 +730,25 @@ function New-OSBuild {
             #   OSDBuilder Seven
             #=================================================
             $OSDUpdateWinSeven = @()
-            if ($MyInvocation.MyCommand.Name -eq 'Update-OSMedia' -and $UpdateOS -eq 'Windows 7') {
-                $OSDUpdateWinSeven = $OSDUpdates
-            }
             #=================================================
             #   OSDBuilder EightOne
             #=================================================
             $OSDUpdateWinEightOne = @()
-            if ($MyInvocation.MyCommand.Name -eq 'Update-OSMedia' -and $UpdateOS -eq 'Windows 8.1') {
-                $OSDUpdateWinEightOne = $OSDUpdates
-                $OSDUpdateWinEightOne = $OSDUpdateWinEightOne | Where-Object {$_.UpdateGroup -ne 'SetupDU'}
-                $OSDUpdateWinEightOne = $OSDUpdateWinEightOne | Where-Object {$_.UpdateGroup -notlike "ComponentDU*"}
-            }
             #=================================================
             #   OSDBuilder Twelve
             #=================================================
             $OSDUpdateWinTwelveR2 = @()
-            if ($MyInvocation.MyCommand.Name -eq 'Update-OSMedia' -and $UpdateOS -eq 'Windows Server 2012 R2') {
-                $OSDUpdateWinTwelveR2 = $OSDUpdates
-                $OSDUpdateWinTwelveR2 = $OSDUpdateWinTwelveR2 | Where-Object {$_.UpdateGroup -ne 'SetupDU'}
-                $OSDUpdateWinTwelveR2 = $OSDUpdateWinTwelveR2 | Where-Object {$_.UpdateGroup -notlike "ComponentDU*"}
-            }
             #=================================================
             #   Optional
             #=================================================
             $OSDUpdateOptional = @()
-            if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild' -and $OSMajorVersion -eq 10) {
+            if ($OSMajorVersion -eq 10) {
                 $OSDUpdateOptional = $OSDUpdates | Where-Object {($_.UpdateGroup -eq '') -or ($_.UpdateGroup -eq 'Optional')}
             }
             #=================================================
             #   Update Check
             #=================================================
-            if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild' -and $LatestOSMedia) {
+            if ($LatestOSMedia) {
                 if ($LatestOSMedia.Updates -ne 'OK') {
                     Write-Host '========================================================================================' -ForegroundColor DarkGray
                     Write-Warning "This OSMedia does not have the latest WSUSXML (Microsoft Updates)"
@@ -1137,13 +1074,6 @@ function New-OSBuild {
                 #=================================================
                 Write-Verbose '19.3.17 UBR Validation'
                 #=================================================
-                if ($MyInvocation.MyCommand.Name -eq 'Update-OSMedia') {
-                    if ($UBRPre -eq $UBR) {
-                        Write-Host '========================================================================================' -ForegroundColor DarkGray
-                        Write-Warning 'The Update Build Revision did not change after Windows Updates'
-                        Write-Warning 'There may have been an issue applying the Latest Cumulative Update if this was not expected'
-                    }
-                }
                 if (!($UBR)) {
                     Write-Host '========================================================================================' -ForegroundColor DarkGray
                     $UBR = $((Get-Date).ToString('yyMMddhhmm'))
@@ -1207,12 +1137,9 @@ function New-OSBuild {
                 $NewOSMediaName = "$NewOSMediaName $OSLanguages"
                 if ($($OSLanguages.count) -eq 1) {$NewOSMediaName = $NewOSMediaName.replace(' en-US','')}
 
-                if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild') {
-                    if ($CustomName) {$NewOSMediaName = "$CustomName $UBR"}
-                }
+                if ($CustomName) {$NewOSMediaName = "$CustomName $UBR"}
                 
-                if ($MyInvocation.MyCommand.Name -eq 'Update-OSMedia') {$NewOSMediaPath = "$SetOSDBuilderPathOSMedia\$NewOSMediaName"}
-                if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild') {$NewOSMediaPath = "$SetOSDBuilderPathOSBuilds\$NewOSMediaName"}
+                $NewOSMediaPath = "$SetOSDBuilderPathOSBuilds\$NewOSMediaName"
                 #=================================================
                 #   19.1.1 Rename Build Directory
                 #=================================================
@@ -1224,8 +1151,7 @@ function New-OSBuild {
                     Write-Host '========================================================================================' -ForegroundColor DarkGray
                     $NewOSMediaName = "$NewOSMediaName $yyMMddhhmm"
 
-                    if ($MyInvocation.MyCommand.Name -eq 'Update-OSMedia') {$NewOSMediaPath = "$SetOSDBuilderPathOSMedia\$NewOSMediaName"}
-                    if ($MyInvocation.MyCommand.Name -eq 'New-OSBuild') {$NewOSMediaPath = "$SetOSDBuilderPathOSBuilds\$NewOSMediaName"}
+                    $NewOSMediaPath = "$SetOSDBuilderPathOSBuilds\$NewOSMediaName"
                 }
                 #=================================================
                 #   OSD-Export
@@ -1236,8 +1162,6 @@ function New-OSBuild {
                 #   OSDBuilder Media'
                 #=================================================
                 if ($CreateISO.IsPresent) {New-OSDBuilderISO -FullName "$WorkingPath"}
-                if ($OSDVHD.IsPresent) {New-OSDBuilderVHD -FullName "$WorkingPath"}
-                if ($OSDInfo.IsPresent) {Show-OSDBuilderInfo -FullName "$WorkingPath"}
                 #=================================================
                 #   Complete Update
                 #=================================================

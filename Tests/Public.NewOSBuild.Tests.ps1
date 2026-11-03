@@ -867,14 +867,6 @@ Describe 'New-OSBuild' {
             Should -Invoke New-OSDBuilderVHD -Times 0 -Exactly
         }
 
-        It 'creates a VHD and shows the info when $OSDVHD and $OSDInfo are set by the caller' {
-            $OSDVHD = [switch]$true
-            $OSDInfo = [switch]$true
-            Invoke-NewOSBuild @{ByTaskName = 'Contoso Win11 Ent x64 25H2'; Execute = $true} | Out-Null
-            Should -Invoke New-OSDBuilderVHD -Times 1 -Exactly -ParameterFilter {$FullName -like "$SetOSDBuilderPathOSBuilds\build*"}
-            Should -Invoke Show-OSDBuilderInfo -Times 1 -Exactly -ParameterFilter {$FullName -like "$SetOSDBuilderPathOSBuilds\build*"}
-        }
-
         It 'pauses before WinPE and the install.wim are dismounted with -PauseDismountPE and -PauseDismountOS' {
             Mock Read-Host {$global:NewOSBuildCalls.Add('Read-Host')}
             Invoke-NewOSBuild @{ByTaskName = 'Contoso Win11 Ent x64 25H2'; Execute = $true; PauseDismountPE = $true; PauseDismountOS = $true} | Out-Null

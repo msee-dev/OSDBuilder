@@ -72,9 +72,7 @@ function Add-OSDBuilderLocalExperiencePack {
     #=================================================
     #   Manifest
     #=================================================
-    $Manifest = $null
-    try {$Manifest = Get-OSDBuilderAppxManifest -Path $PackagePath -ErrorAction Stop}
-    catch {Write-Verbose "Unable to read the AppxManifest of $PackagePath"}
+    $Manifest = Get-OSDBuilderAppxManifest -Path $PackagePath
     if (($null -eq $Manifest) -or [string]::IsNullOrWhiteSpace($Manifest.Name)) {
         Write-Warning "Local Experience Pack: $PackagePath is not a valid .appx"
         Return 'Failed'

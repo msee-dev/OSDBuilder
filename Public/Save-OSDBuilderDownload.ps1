@@ -161,7 +161,6 @@ function Save-OSDBuilderDownload {
         #   Test WebClient
         #=================================================
         $UseWebClient = $false
-        $UseWebRequest = $false
         $UseCurl = $false
 
         if ($WebClient.IsPresent) {$UseWebClient = $true}
@@ -318,9 +317,6 @@ function Save-OSDBuilderDownload {
             #=================================================
             if ($UseWebClient -eq $true) {
                 $WebClientObj.DownloadFile("$DownloadUrl","$DownloadPath\$DownloadFile")
-            }
-            elseif ($UseWebRequest -eq $true) {
-                Invoke-WebRequest -Uri $DownloadUrl -OutFile "$DownloadPath\$DownloadFile"
             }
             elseif ($UseCurl -eq $true) {
                 if ($host.name -match 'ConsoleHost') {

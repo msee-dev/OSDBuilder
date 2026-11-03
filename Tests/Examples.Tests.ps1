@@ -87,6 +87,7 @@ Describe 'New-Win11MultiLanguageBuild.ps1 with the stub module' {
             'Microsoft-Windows-LanguageFeatures-Basic-de-de-Package~31bf3856ad364e35~amd64~~.cab'
             'Microsoft-Windows-LanguageFeatures-OCR-de-de-Package~31bf3856ad364e35~amd64~~.cab'
             'Microsoft-Windows-LanguageFeatures-Speech-de-de-Package~31bf3856ad364e35~amd64~~.cab'
+            'Microsoft-Windows-LanguageFeatures-TextToSpeech-de-at-Package~31bf3856ad364e35~amd64~~.cab'
             'Microsoft-Windows-LanguageFeatures-Basic-th-th-Package~31bf3856ad364e35~amd64~~.cab'
             'Microsoft-Windows-LanguageFeatures-Fonts-Thai-Package~31bf3856ad364e35~amd64~~.cab'
             'Microsoft-Windows-LanguageFeatures-Basic-ca-es-Package~31bf3856ad364e35~amd64~~.cab'
@@ -127,6 +128,20 @@ Describe 'New-Win11MultiLanguageBuild.ps1 with the stub module' {
     It 'sets the regional format, system locale and keyboard with -RegionalFormat' {
         Invoke-Example -Parameters @{DefaultLanguage = 'de-DE'; RegionalFormat = 'de-at'}
         ($global:OSDBuilderStubLog -like 'New-OSBuildTask*-SetAllIntl de-DE -SetUserLocale de-AT -SetSysLocale de-AT -SetInputLocale de-AT*').Count | Should -Be 1
+    }
+
+    It 'adds the Language Features of the -RegionalFormat de-AT with the Basic Language Feature of de-DE' {
+        Invoke-Example -Parameters @{DefaultLanguage = 'de-DE'; RegionalFormat = 'de-AT'}
+        $Task = Get-ExampleTask
+        $Task.LanguageFeature -like '*TextToSpeech-de-at-Package*' | Should -HaveCount 1
+        $Task.LanguageFeature -like '*Basic-de-de-Package*' | Should -HaveCount 1
+    }
+
+    It 'does not add the Language Features of the -RegionalFormat without a display language of the same language' {
+        Mock Write-Warning {}
+        Invoke-Example -Parameters @{Languages = @('en-US', 'th-TH'); RegionalFormat = 'de-AT'}
+        (Get-ExampleTask).LanguageFeature -like '*-de-at-*' | Should -HaveCount 0
+        Should -Invoke Write-Warning -ParameterFilter {$Message -like '*Language Features of de-AT require a display language like de-DE in -Languages*'} -Times 1 -Exactly
     }
 
     It 'explains that de-AT is a regional format and not a display language' {

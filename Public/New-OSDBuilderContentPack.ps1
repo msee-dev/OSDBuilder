@@ -66,7 +66,6 @@ function New-OSDBuilderContentPack {
         #'PEScripts\x86'
     )
 
-    $MultiLangContentPack = @()
     #=================================================
     #   Get-OSDBuilder
     #=================================================
@@ -86,16 +85,6 @@ function New-OSDBuilderContentPack {
     #=================================================
     if (($ContentType -eq 'All') -or ($ContentType -eq 'WinPE')) {
         foreach ($item in $PEContentPack) {
-            if (!(Test-Path (Join-Path $SetOSDBuilderPathContentPacks "$Name\$item"))) {
-                New-Item (Join-Path $SetOSDBuilderPathContentPacks "$Name\$item") -ItemType Directory -Force | Out-Null
-            }
-        }
-    }
-    #=================================================
-    #   MultiLangContentPack
-    #=================================================
-    if (($ContentType -eq 'All') -or ($ContentType -eq 'MultiLang')) {
-        foreach ($item in $MultiLangContentPack) {
             if (!(Test-Path (Join-Path $SetOSDBuilderPathContentPacks "$Name\$item"))) {
                 New-Item (Join-Path $SetOSDBuilderPathContentPacks "$Name\$item") -ItemType Directory -Force | Out-Null
             }

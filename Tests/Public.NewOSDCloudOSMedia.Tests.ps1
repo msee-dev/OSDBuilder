@@ -321,6 +321,11 @@ Describe 'New-OSDCloudOSMedia' {
     Context 'OneDriveSetup' {
         BeforeEach {
             $OneDriveSetup = New-TestFile -Path (Join-Path $GetOSDBuilderPathContentOneDrive 'OneDriveSetup.exe')
+            #The folders of the mounted image with OneDriveSetup.exe, Windows 10 x64 has it in SysWOW64
+            $script:OneDriveFolders = @('SysWOW64')
+            Mock Mount-InstallwimOS {
+                foreach ($Folder in $script:OneDriveFolders) {New-TestFile -Path (Join-Path (Join-Path (Join-Path $ExpectedMountOS 'Windows') $Folder) 'OneDriveSetup.exe') | Out-Null}
+            }
         }
 
         It 'updates OneDriveSetup.exe in SysWOW64 of a x64 client' {
@@ -332,10 +337,23 @@ Describe 'New-OSDCloudOSMedia' {
             }
         }
 
-        It 'updates OneDriveSetup.exe in System32 of a x86 client' {
-            $Image.Architecture = 0
+        It 'updates OneDriveSetup.exe in System32 of a x64 client that has it in System32 only (Windows 11)' {
+            $script:OneDriveFolders = @('System32')
             Invoke-OSDCloudOSMedia | Out-Null
             Should -Invoke robocopy -Times 1 -Exactly -ParameterFilter {(@($InputObject) + @($RemainingArguments))[1] -eq "$ExpectedMountOS\Windows\System32"}
+        }
+
+        It 'updates OneDriveSetup.exe in System32 of a x86 client' {
+            $Image.Architecture = 0
+            $script:OneDriveFolders = @('System32')
+            Invoke-OSDCloudOSMedia | Out-Null
+            Should -Invoke robocopy -Times 1 -Exactly -ParameterFilter {(@($InputObject) + @($RemainingArguments))[1] -eq "$ExpectedMountOS\Windows\System32"}
+        }
+
+        It 'does not add OneDriveSetup.exe to an image without one' {
+            $script:OneDriveFolders = @()
+            Invoke-OSDCloudOSMedia | Out-Null
+            Should -Invoke robocopy -Times 0 -Exactly
         }
 
         It 'updates OneDriveSetup.exe that was not downloaded today' {

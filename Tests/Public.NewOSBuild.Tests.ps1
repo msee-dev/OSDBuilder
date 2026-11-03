@@ -257,7 +257,7 @@ Describe 'New-OSBuild' {
         Mock Mount-InstallwimOS {
             $global:NewOSBuildCalls.Add('Mount-InstallwimOS')
             Save-NewOSBuildState 'Mount-InstallwimOS'
-            if ($script:OneDriveSetupPath) {New-TestFile -Path (Join-Path $MountDirectory $script:OneDriveSetupPath) | Out-Null}
+            foreach ($Path in $script:OneDriveSetupPath) {New-TestFile -Path (Join-Path $MountDirectory $Path) | Out-Null}
         }
     }
 
@@ -919,9 +919,7 @@ Describe 'New-OSBuild' {
         }
 
         It 'updates OneDriveSetup.exe in System32 and SysWOW64 of a x64 Client with both' {
-            Mock Mount-InstallwimOS {
-                foreach ($Folder in 'System32', 'SysWOW64') {New-TestFile -Path (Join-Path (Join-Path (Join-Path $MountDirectory 'Windows') $Folder) 'OneDriveSetup.exe') | Out-Null}
-            }
+            $script:OneDriveSetupPath = 'Windows\System32\OneDriveSetup.exe', 'Windows\SysWOW64\OneDriveSetup.exe'
             New-TestFile -Path (Join-Path $GetOSDBuilderPathContentOneDrive 'OneDriveSetup.exe') | Out-Null
             New-OSBuild -ByTaskName 'Contoso Win11 Ent x64 25H2' -Execute 6>$null 3>$null
             Should -Invoke robocopy -Times 2 -Exactly

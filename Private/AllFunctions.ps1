@@ -6397,8 +6397,10 @@ function Update-OneDriveSetupOS {
     Replaces OneDriveSetup.exe of the mounted install.wim with the one in the OneDrive Content directory
 
     .DESCRIPTION
-    Windows 10 x64 has OneDriveSetup.exe in SysWOW64, Windows 11 x64 and x86 images have it in System32.
+    Windows 10 x64 has OneDriveSetup.exe in SysWOW64, Windows 11 x64 and Windows 10 x86 images have it in System32.
     Every copy of OneDriveSetup.exe that exists in the image is updated, no copy is added to an image without one.
+    Microsoft publishes a single OneDriveSetup.exe installer for Windows (Save-OSDBuilderDownload -ContentDownload 'OneDriveSetup Production'
+    or 'OneDriveSetup Enterprise'), the file of the OneDrive Content directory is copied to every folder of the image that has one.
     Uses $MountDirectory, $Info, $OSMajorVersion, $OSInstallationType and $GetOSDBuilderPathContentOneDrive of the calling scope.
     #>
     [CmdletBinding()]
